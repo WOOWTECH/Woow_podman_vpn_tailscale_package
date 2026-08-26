@@ -1,17 +1,23 @@
 # LAN-facing reverse proxy in front of tailscale web UI on :8088.
+# - HTTPS on :8443 with Caddy-managed self-signed cert (tls internal).
 # - Basic auth (user/hash from env; supplied by compose or quadlet).
-# - HTTPS on :8443 with caddy-managed self-signed cert (tls internal).
-# - Only proxies /                → tailscale web UI. Nothing else exposed.
+# - Only proxies /   → tailscale web UI. Nothing else exposed.
 
 {
 	# Auto self-signed CA + cert for LAN use. Trust the CA on your client
 	# (Caddy prints its path on first boot: `/data/caddy/pki/authorities/local/root.crt`).
 	local_certs
+	# ClientHello with SNI=<LAN-IP> would otherwise mismatch and Caddy rejects
+	# the handshake. Fall back to the `localhost` cert so `https://<host_ip>:8443`
+	# works (browser warns once about hostname mismatch, then you accept).
+	default_sni localhost
 	# Uncomment for debug:
 	# debug
 }
 
-:8443 {
+# Site block MUST include a hostname so `tls internal` has something to issue
+# a cert for. `https://:8443` also catches IP-only requests (matched via default_sni).
+localhost:8443, https://:8443 {
 	tls internal
 
 	basic_auth {
@@ -22,7 +28,6 @@
 
 	reverse_proxy {$TAILSCALE_UPSTREAM} {
 		header_up X-Forwarded-Proto https
-		header_up X-Forwarded-Host {host}
 	}
 
 	# Aggressive security headers for a LAN-only admin UI.

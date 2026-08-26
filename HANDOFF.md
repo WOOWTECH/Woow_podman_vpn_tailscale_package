@@ -116,6 +116,7 @@ tailscale status  # (或 `podman exec woow-tailscale tailscale status`)
 
 - **⚠️ `tailscale up` 無 authkey 時 block 住** — entrypoint 原本前景跑 `tailscale up`，沒 authkey 時它會等 operator 點 login URL 才 return，導致後面 `tailscale web` 從不啟動 → web UI 打不開。**修法**：`entrypoint.sh` 改成「有 authkey → 前景；沒 authkey → 背景」。symptom = `curl 127.0.0.1:8088` `Connection reset by peer` + `ps` 看到 `tailscale up` PID 卡著 → 就是這個。commit `<v0.1.1>` 修掉。
 - **OCI HEALTHCHECK 警告** — `podman build` 預設 OCI format 不吃 `HEALTHCHECK` 指令，build log 每次都吐 `HEALTHCHECK is not supported for OCI image format and will be ignored`。**不影響功能**（compose.yml + `.container` quadlet 都自己帶 healthcheck）。要把 HEALTHCHECK 塞進 image 本身：`podman build --format docker -t ...`。Containerfile 已加註解。
+- **⚠️ Caddy `:port` 站 + `tls internal` = TLS 握手崩** — 原 `examples/Caddyfile` 用 `:8443 { tls internal }`（沒 hostname），Caddy 內部 CA 沒東西可簽 → 完全沒發 cert → 所有 HTTPS 請求收 `tlsv1 alert internal error` (alert 80)。curl 看到 `error:0A000438` 就是這個。**修法**：站頭改成 `localhost:8443, https://:8443 { tls internal }` 讓 Caddy 幫 `localhost` 簽；globals 加 `default_sni localhost` 讓 SNI=<LAN-IP> 的請求 fallback 到那張 cert。symptom = `curl -k https://<ip>:8443/` 出 `SSL routines::tlsv1 alert internal error`。commit `<caddy-fix>` 修掉。副 finding：改完 Caddyfile 後 `caddy reload` 有時說 `config is unchanged` 沒吃到，用 `podman restart wtv-caddy` 強制重讀。
 
 ### 執行環境常見警告（**無害**，不用 fix）
 
