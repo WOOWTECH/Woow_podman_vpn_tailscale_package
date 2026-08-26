@@ -126,14 +126,26 @@ if [[ -n "$TS_EXTRA_UP_ARGS" ]]; then
 fi
 
 log "running: tailscale up ${up_args[*]//--authkey=*/--authkey=***}"
-if ! tailscale up "${up_args[@]}"; then
-  log "WARN: tailscale up failed. If interactive login is needed, run: podman exec -it <container> tailscale up ${up_args[*]//--authkey=*/}"
+if [[ -n "$TS_AUTHKEY" ]]; then
+  # Non-interactive: authkey means `tailscale up` completes on its own.
+  if ! tailscale up "${up_args[@]}"; then
+    log "WARN: tailscale up failed with authkey. Check log above."
+  fi
+else
+  # Interactive: `tailscale up` (no --authkey) BLOCKS waiting for the operator
+  # to click the login URL. Backgrounding it so `tailscale web` can still start
+  # and stream logs (login URL) come through. The user completes login via URL
+  # (printed in log) or from the web UI.
+  log "no TS_AUTHKEY set → backgrounding tailscale up (interactive login via URL / web UI)"
+  tailscale up "${up_args[@]}" &
 fi
 
 # ============================================================================
 # 4. Optional web UI on :8088
 # ============================================================================
 if [[ "$TS_WEB_UI" == "true" ]]; then
+  # Small delay so tailscaled's localapi is definitely ready before `tailscale web` connects.
+  sleep 1
   log "starting tailscale web on $TS_WEB_LISTEN (put a reverse-proxy with basic-auth in front!)"
   tailscale web --listen "$TS_WEB_LISTEN" --readonly=false &
 fi

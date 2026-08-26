@@ -112,12 +112,32 @@ tailscale status  # (或 `podman exec woow-tailscale tailscale status`)
 
 ## 5. 已知限制 / 已知坑
 
-- **Rootless podman + NET_ADMIN**：podman rootless 給 NET_ADMIN 需要 kernel `CAP_NET_ADMIN` on user ns（Linux 4.14+ 一般都有）。若壞，改 `TS_USERSPACE_NETWORKING=true`（效能差、但 subnet router 仍可用）。
-- **`/dev/net/tun` in rootless**：Hermes 要確認 `/dev/net/tun` 對執行帳號可讀寫；不行的話同上，切 userspace networking。
-- **Caddy self-signed cert**：瀏覽器會警告。要 CA-trusted 就在 Caddyfile 換 ACME（外對外 domain）或 mkcert（LAN CA）。
-- **rootless 41641/udp**：低於 1024 的 port rootless podman 不能綁；41641 沒事。若手動改 `TS_UDP_PORT=<1024`，用 rootful podman。
+### 已修（v0.1.1，本機 podman 4.9.3 驗證出來的 bug）
+
+- **⚠️ `tailscale up` 無 authkey 時 block 住** — entrypoint 原本前景跑 `tailscale up`，沒 authkey 時它會等 operator 點 login URL 才 return，導致後面 `tailscale web` 從不啟動 → web UI 打不開。**修法**：`entrypoint.sh` 改成「有 authkey → 前景；沒 authkey → 背景」。symptom = `curl 127.0.0.1:8088` `Connection reset by peer` + `ps` 看到 `tailscale up` PID 卡著 → 就是這個。commit `<v0.1.1>` 修掉。
+- **OCI HEALTHCHECK 警告** — `podman build` 預設 OCI format 不吃 `HEALTHCHECK` 指令，build log 每次都吐 `HEALTHCHECK is not supported for OCI image format and will be ignored`。**不影響功能**（compose.yml + `.container` quadlet 都自己帶 healthcheck）。要把 HEALTHCHECK 塞進 image 本身：`podman build --format docker -t ...`。Containerfile 已加註解。
+
+### 執行環境常見警告（**無害**，不用 fix）
+
+- `TPM: error opening: stat /dev/tpmrm0: no such file or directory` — 容器無 TPM，tailscale 自己會 fallback。
+- `router: enumerating tailscale0 addresses for cleanup failed: failed to look up link "tailscale0": Link not found` — 首次啟動 tailscale0 還沒建，正常。
+- `magicsock: failed to force-set UDP read/write buffer size to 7340032: operation not permitted` — rootless 用戶 ns 拿不到 `SO_SNDBUFFORCE`，走 kernel default，只影響 throughput 峰值。要拉掉這個警告 → rootful 或給 `--cap-add=NET_ADMIN`（我們已加）+ sysctl 調 `net.core.rmem_max`。
+- `router: ip6tables filtering is not supported on this host … Table does not exist` — container 沒 loaded ip6tables filter module，只影響 IPv6 firewall；v6=false 時完全無感。要修 → host 側 `modprobe ip6table_filter`。
+
+### 部署方向注意事項
+
+- **Rootless podman + NET_ADMIN**：Linux 4.14+ user ns 一般都 OK。若壞，改 `TS_USERSPACE_NETWORKING=true`（效能差 5-10x，subnet router 仍可用）。
+- **`/dev/net/tun`**：目標主機要確認執行帳號可讀寫；不行同上，切 userspace networking。
+- **Caddy self-signed cert**：瀏覽器警告一次接受即可。要 CA-trusted 換 ACME（對外 domain）或 mkcert（LAN CA）。
+- **rootless 41641/udp**：<1024 port rootless 不能綁；41641 沒事。手動改 `TS_UDP_PORT` <1024 要 rootful。
 - **login_server 熱切換**：entrypoint 有 `logout` 邏輯，切換後首次啟動要重跑 authkey 或 interactive login。
-- **Taildrive**：本倉沒帶 — 需要的話 bind-mount host 資料夾進 container，再 `podman exec ... tailscale drive share`。
+- **Taildrive**：本倉沒帶 — 要分享 host 資料夾：`podman ... -v /path:/share` + `podman exec ts tailscale drive share`。
+
+### 本地測試（開發時可跳過真接 tailnet）
+
+- 若本機已跑 tailscale（`ss -ulnp | grep 41641` 有東西），container 用 `-p 41642:41641/udp` 避開衝突。
+- `TS_AUTHKEY=` 空 → 從 `podman logs` 找 `To authenticate, visit:` 那條 URL，開瀏覽器點；或走 web UI 點 Log in（web UI 會轉到同一個 URL）。
+- 開發驗證只想確認容器起得來、web UI 通，不用真的 join tailnet：起容器 → `curl http://127.0.0.1:8088` 有 200 即算過。
 
 ---
 

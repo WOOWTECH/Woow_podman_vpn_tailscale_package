@@ -30,6 +30,10 @@ VOLUME ["/var/lib/tailscale"]
 # 41641/udp = WireGuard direct; 8088/tcp = tailscale web UI (opt-in via TS_WEB_UI).
 EXPOSE 41641/udp 8088/tcp
 
+# NOTE: HEALTHCHECK is a no-op on OCI-format images (podman default).
+# The equivalent liveness probe lives in compose.yml AND the quadlet (HealthCmd=),
+# both of which honour it. To bake this into the image itself use:
+#   podman build --format docker -t localhost/woow-tailscale:latest .
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD tailscale status --peers=false >/dev/null 2>&1 || exit 1
 
