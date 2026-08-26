@@ -1,0 +1,66 @@
+# Podman-compose (or docker-compose) form. Works with `podman-compose up -d`.
+# Two services: tailscale + caddy (reverse-proxy for the web UI with basic auth).
+#
+# For production auto-start, prefer the systemd quadlets (see *.container / *.network).
+services:
+
+  tailscale:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: localhost/woow-tailscale:latest
+    container_name: woow-tailscale
+    hostname: ${TS_HOSTNAME:-woow-tailscale}
+    restart: unless-stopped
+
+    # Kernel networking (subnet router + exit node). Set TS_USERSPACE_NETWORKING=true
+    # in .env if you cannot grant NET_ADMIN and are OK with slower userspace mode.
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun
+
+    # Persistence: machine key, prefs. Named volume so backups pick it up.
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+
+    ports:
+      # WireGuard direct P2P (open on host firewall for best NAT traversal).
+      - "41641:41641/udp"
+      # tailscale web UI (proxied by caddy; NOT bound to LAN directly).
+      - "127.0.0.1:8088:8088/tcp"
+
+    env_file:
+      - .env
+
+    healthcheck:
+      test: ["CMD", "tailscale", "status", "--peers=false"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # LAN-facing reverse proxy with basic auth in front of tailscale web UI.
+  # Comment this whole service out if you prefer SSH tunnel access instead.
+  caddy:
+    image: docker.io/caddy:2-alpine
+    container_name: woow-tailscale-proxy
+    restart: unless-stopped
+    depends_on:
+      - tailscale
+    ports:
+      - "${CADDY_LAN_PORT:-8443}:8443"
+    volumes:
+      - ./examples/Caddyfile:/etc/caddy/Caddyfile:ro,Z
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      TAILSCALE_UPSTREAM: "tailscale:8088"
+      BASIC_AUTH_USER: "${BASIC_AUTH_USER:-admin}"
+      BASIC_AUTH_HASH: "${BASIC_AUTH_HASH}"   # generate: docker run --rm caddy:2-alpine caddy hash-password
+
+volumes:
+  tailscale-state:
+  caddy-data:
+  caddy-config:

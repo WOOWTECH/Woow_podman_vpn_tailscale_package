@@ -1,0 +1,6 @@
+# local env with secrets
+.env
+# any locally-generated caddy/mkcert artifacts
+*.pem
+data/
+config/

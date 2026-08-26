@@ -1,0 +1,21 @@
+[Unit]
+Description=Woow Tailscale — Caddy reverse proxy (basic auth in front of tailscale web UI)
+Wants=podman-tailscale.service podman-tailscale-network.service
+After=podman-tailscale.service podman-tailscale-network.service
+
+[Container]
+ContainerName=woow-tailscale-proxy
+Image=docker.io/caddy:2-alpine
+PublishPort=8443:8443/tcp
+Volume=%h/.config/containers/systemd/Caddyfile:/etc/caddy/Caddyfile:ro,Z
+Volume=woow-tailscale-caddy-data:/data
+Volume=woow-tailscale-caddy-config:/config
+Network=woow-tailscale.network
+EnvironmentFile=%h/.config/containers/systemd/tailscale.env
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

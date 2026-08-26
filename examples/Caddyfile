@@ -1,0 +1,39 @@
+# LAN-facing reverse proxy in front of tailscale web UI on :8088.
+# - Basic auth (user/hash from env; supplied by compose or quadlet).
+# - HTTPS on :8443 with caddy-managed self-signed cert (tls internal).
+# - Only proxies /                → tailscale web UI. Nothing else exposed.
+
+{
+	# Auto self-signed CA + cert for LAN use. Trust the CA on your client
+	# (Caddy prints its path on first boot: `/data/caddy/pki/authorities/local/root.crt`).
+	local_certs
+	# Uncomment for debug:
+	# debug
+}
+
+:8443 {
+	tls internal
+
+	basic_auth {
+		# env: BASIC_AUTH_USER, BASIC_AUTH_HASH
+		# hash from:  caddy hash-password --plaintext 'your-password'
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	reverse_proxy {$TAILSCALE_UPSTREAM} {
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+	}
+
+	# Aggressive security headers for a LAN-only admin UI.
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

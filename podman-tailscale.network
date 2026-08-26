@@ -1,0 +1,9 @@
+[Unit]
+Description=Shared network for Woow Tailscale + reverse-proxy sidecar
+
+[Network]
+NetworkName=woow-tailscale
+Driver=bridge
+
+[Install]
+WantedBy=default.target
