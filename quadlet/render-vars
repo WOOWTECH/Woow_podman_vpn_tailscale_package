@@ -1,0 +1,5 @@
+# Variables scripts/install.sh may substitute for @@NAME@@ in quadlet/* (decision D2).
+# Anything not listed here is a hard error.
+#
+# From ~/.config/woow-tailscale/woow-tailscale.env (config/woow-tailscale.env.example):
+TS_STATE_DIR
