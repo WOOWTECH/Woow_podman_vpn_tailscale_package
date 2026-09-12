@@ -57,6 +57,9 @@ Label=io.woowtech.app=woow-tailscale
 # Never start with a missing state directory: a mistyped path would enrol a fresh node,
 # hand out a new tailnet IP and drop every serve forward.
 ExecStartPre=/usr/bin/test -d @@TS_STATE_DIR@@
+# A container stopped by systemd is stopped with SIGTERM: an entrypoint that does not
+# trap it exits 143 (128+15), which would leave the unit failed after a clean stop.
+SuccessExitStatus=143
 Restart=always
 RestartSec=10
 TimeoutStartSec=300
