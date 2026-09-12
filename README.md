@@ -241,6 +241,7 @@ bind mount is used in place.
 ```bash
 ./scripts/migrate-legacy.sh --dry-run            # what it would derive and do
 ./scripts/migrate-legacy.sh --watchdog 15m       # the migration itself
+./scripts/migrate-legacy.sh --watchdog 15m --allow-broader pi-web   # ... on a host with a coding agent
 # ... verify: same node id, same IP, serve forwards answer ...
 ./scripts/migrate-legacy.sh --commit             # keep it, disarm the watchdog
 ./scripts/migrate-legacy.sh --rollback           # legacy container back, any time during the soak
@@ -265,6 +266,23 @@ in the order they matter:
 It converts the old env file on the way (dropping the Caddy `BASIC_AUTH_*`,
 `CADDY_LAN_PORT` and the settings the unit now forces); `--keep-env` leaves an already
 converted file alone.
+
+### What the transient units can see
+
+The swap and the watchdog run as transient `systemd --user` units, and `systemd-run --user`
+starts a unit from the **user manager's** environment, never from the shell that launched
+the migration. A variable you export first therefore reaches the detached half only because
+`scripts/watchdog.sh` names it in `TS_DETACHED_ENV` and passes it as `--setenv`
+(`QL_PATH_MOUNT_ALLOW`, `WOOW_SSH_PATH_LOCK` and the quadlet-lib path, guard and wait knobs
+are there; `QL_DRY_RUN` deliberately is not).
+
+`--allow-broader NAME` (repeatable) is the supported way to set the first one. It declares a
+container that legitimately holds a mount *containing* the state directory - pi-web's
+`Volume=%h:/host%h` gives the coding agent every path under `$HOME`, so it contains the
+tailscale state directory too - and silences the shared library's broader-mount warning for
+it. The check that emits that warning runs in `install.sh`, and during a migration
+`install.sh` only ever runs **inside the swap unit**, which is exactly where the environment
+used to be dropped. `--status` prints the effective allowlist.
 
 **Downtime: the tailnet path and every `tailscale serve` forward are down for roughly
 15-30 seconds.**
@@ -298,6 +316,7 @@ converted file alone.
 | `install.sh` refuses: `TS_LOGIN_SERVER`/`TS_HOSTNAME` differ from the running node | that change re-registers the node; `--allow-identity-change` if you mean it |
 | `install.sh` refuses: a container named `woow-tailscale` exists | it is not ours; use `scripts/migrate-legacy.sh`, which keeps it for rollback |
 | `install.sh` refuses: UDP 41641 in use | another node on this host; set `TS_UDP_PORT` |
+| the swap unit's journal warns "sits inside a broader mount held by running container(s)" | a host-file-access container (pi-web's `%h:/host%h`) contains the state directory; re-run with `--allow-broader pi-web`. Exporting `QL_PATH_MOUNT_ALLOW` alone did nothing before the `--setenv` fix |
 | `BackendState=NeedsLogin` | no `TS_AUTHKEY`: open the login URL from `podman logs woow-tailscale` |
 | Node up, but services on the host are unreachable over the tailnet | they listen on a LAN address only; in userspace mode traffic arrives on `127.0.0.1` |
 | Two nodes flapping | two tailscaled on one state directory, or an identity restored onto two hosts |
@@ -318,11 +337,13 @@ scripts/
 tests/
   dryrun.sh dryrun.local.sh  render + quadlet -dryrun + systemd-analyze verify (CI)
   smoke.sh                   post-install checks on a real host
+  detached-env.sh            the transient units carry the environment they need (CI)
   fixtures/                  per-host variants for the dry-run
 Containerfile entrypoint.sh  the image: pinned upstream base + the env-driven entrypoint
 examples/nginx-basic-auth.conf  putting auth in front of 127.0.0.1:8088
 docs/history/HANDOFF-v1.md   the retired compose + bridge + Caddy design, kept as history
-.github/workflows/           quadlet-ci.yml (dry-run, shellcheck), image.yml (build + version gate)
+.github/workflows/           quadlet-ci.yml (dry-run, shellcheck), scripts.yml (detached env),
+                             image.yml (build + version gate)
 ```
 
 ## Sibling repositories

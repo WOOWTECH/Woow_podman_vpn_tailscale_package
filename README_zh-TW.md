@@ -222,6 +222,7 @@ tailnet IP 與升級前相同** → 跑 smoke 測試。任何一項失敗，它�
 ```bash
 ./scripts/migrate-legacy.sh --dry-run            # 看它會推導出什麼、會做什麼
 ./scripts/migrate-legacy.sh --watchdog 15m       # 實際遷移
+./scripts/migrate-legacy.sh --watchdog 15m --allow-broader pi-web   # 主機上有 coding agent 容器時
 # ... 驗證：node id 相同、IP 相同、serve 轉發有回應 ...
 ./scripts/migrate-legacy.sh --commit             # 保留，解除 watchdog
 ./scripts/migrate-legacy.sh --rollback           # 觀察期內隨時可把舊容器換回來
@@ -241,6 +242,20 @@ tailnet IP 與升級前相同** → 跑 smoke 測試。任何一項失敗，它�
 
 過程中會轉換舊的 env 檔（丟掉 Caddy 的 `BASIC_AUTH_*`、`CADDY_LAN_PORT` 以及現在由 unit 強制的
 設定）；已經轉換過的檔案可用 `--keep-env` 保留原樣。
+
+### transient unit 看得到什麼
+
+切換與 watchdog 都跑在 transient `systemd --user` unit 裡，而 `systemd-run --user` 是以
+**user manager 的環境**啟動 unit，不是啟動遷移的那個 shell 的環境。所以你事先 export 的變數，
+只有在 `scripts/watchdog.sh` 的 `TS_DETACHED_ENV` 有列名、並以 `--setenv` 帶進去時才到得了
+detach 出去的那一半（`QL_PATH_MOUNT_ALLOW`、`WOOW_SSH_PATH_LOCK` 以及 quadlet-lib 的路徑、
+守衛、等待旋鈕都在裡面；`QL_DRY_RUN` 刻意不帶）。
+
+`--allow-broader NAME`（可重複）是設定前者的正式寫法：宣告某個容器持有的 mount 合理地**包含**
+state 目錄——pi-web 的 `Volume=%h:/host%h` 把 `$HOME` 底下每個路徑都給了 coding agent，自然也
+包含 tailscale 的 state 目錄——並對它關掉共用函式庫的 broader-mount 警告。發出該警告的檢查在
+`install.sh` 裡，而遷移時 `install.sh` **只會在 swap unit 裡執行**，正好就是環境被丟掉的地方。
+`--status` 會印出目前生效的允許清單。
 
 **停機時間：tailnet 通道與所有 `tailscale serve` 轉發約中斷 15-30 秒。**
 
@@ -267,6 +282,7 @@ tailnet IP 與升級前相同** → 跑 smoke 測試。任何一項失敗，它�
 | `install.sh` 拒絕：`TS_LOGIN_SERVER`／`TS_HOSTNAME` 與執行中的節點不同 | 這個改動會讓節點重新註冊；確定要這樣就加 `--allow-identity-change` |
 | `install.sh` 拒絕：已存在名為 `woow-tailscale` 的容器 | 那不是我們建立的；改用 `scripts/migrate-legacy.sh`，它會留著舊容器供回滾 |
 | `install.sh` 拒絕：UDP 41641 已被占用 | 主機上已有其他節點；設定 `TS_UDP_PORT` |
+| swap unit 的 journal 警告 "sits inside a broader mount held by running container(s)" | 有持有主機檔案的容器（pi-web 的 `%h:/host%h`）包含了 state 目錄；改用 `--allow-broader pi-web` 重跑。在 `--setenv` 修好之前，只 export `QL_PATH_MOUNT_ALLOW` 是沒有用的 |
 | `BackendState=NeedsLogin` | 沒有 `TS_AUTHKEY`：從 `podman logs woow-tailscale` 取登入網址 |
 | 節點正常，但主機上的服務從 tailnet 連不到 | 那些服務只聽 LAN 位址；userspace 模式下流量是從 `127.0.0.1` 進來的 |
 | 兩個節點互相搶線 | 兩個 tailscaled 共用一個 state 目錄，或同一份身分被還原到兩台主機 |
@@ -287,11 +303,13 @@ scripts/
 tests/
   dryrun.sh dryrun.local.sh  render + quadlet -dryrun + systemd-analyze verify（CI）
   smoke.sh                   實機安裝後檢查
+  detached-env.sh            transient unit 有帶到該帶的環境變數（CI）
   fixtures/                  dry-run 用的各主機變體
 Containerfile entrypoint.sh  映像：釘版的上游 base + env 驅動的 entrypoint
 examples/nginx-basic-auth.conf  在 127.0.0.1:8088 前面加認證
 docs/history/HANDOFF-v1.md   已退役的 compose + bridge + Caddy 設計，保留為歷史
-.github/workflows/           quadlet-ci.yml（dry-run、shellcheck）、image.yml（建置與版本檢查）
+.github/workflows/           quadlet-ci.yml（dry-run、shellcheck）、scripts.yml（detached 環境）、
+                             image.yml（建置與版本檢查）
 ```
 
 ## 姊妹倉
