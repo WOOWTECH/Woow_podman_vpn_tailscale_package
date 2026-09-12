@@ -4,7 +4,7 @@
 # directory, so the same node key, the same tailnet IP and the same serve configuration.
 #
 #   scripts/migrate-legacy.sh [--watchdog 15m] [--state-dir DIR] [--keep-env]
-#                             [--yes] [--dry-run]
+#                             [--allow-broader NAME]... [--yes] [--dry-run]
 #   scripts/migrate-legacy.sh --commit        keep it; disarm the watchdog
 #   scripts/migrate-legacy.sh --rollback      put the legacy container back now
 #   scripts/migrate-legacy.sh --status        what a migration left behind
@@ -24,6 +24,12 @@
 #   - the old and the new container never run at the same time (one state directory, one
 #     UDP port), and a rollback always stops the new one first;
 #   - the go/no-go is the node identity: the same node id and tailnet IP as before.
+#
+# --allow-broader NAME declares a container that legitimately holds a mount CONTAINING the
+# state directory (pi-web's %h:/host%h gives the coding agent every path under $HOME) and
+# silences the shared library's broader-mount warning for it. Repeatable. It is exported as
+# QL_PATH_MOUNT_ALLOW, so it reaches the install.sh that runs inside the transient swap
+# unit - which is the only place that guard runs at all.
 #
 # Downtime: the tailnet path and every `tailscale serve` forward are down for roughly
 # 15-30 seconds.
@@ -51,6 +57,7 @@ while (($#)); do
     --watchdog) watchdog=${2:?--watchdog needs a delay such as 15m}; shift ;;
     --state-dir) state_dir_opt=${2:?--state-dir needs a directory}; shift ;;
     --keep-env) keep_env=1 ;;
+    --allow-broader) ts_allow_broader "${2:?--allow-broader needs a container name}"; shift ;;
     --yes) yes=1 ;;
     --dry-run) export QL_DRY_RUN=1 ;;
     --commit) mode=commit ;;
@@ -59,7 +66,7 @@ while (($#)); do
     --finish) mode=finish ;;
     --swap) mode=swap ;;                     # internal: runs inside the transient unit
     --watchdog-fire) mode=watchdog_fire ;;   # internal: the timer's target
-    -h | --help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,35p' "$0"; exit 0 ;;
     *) ql_die "unknown option $1 (see --help)" ;;
   esac
   shift
@@ -148,6 +155,7 @@ case $mode in
     if [[ -f $MSTATE ]]; then sed 's/^/  /' "$MSTATE"; else echo "  no migration state in $MSTATE"; fi
     echo "  watchdog: $(ts_wd_state "$WD_UNIT")   commit marker: $([[ -f $COMMIT_MARKER ]] && echo yes || echo no)"
     echo "  ssh-path lock: $([[ -d $SSH_LOCK ]] && sed -n 's/^owner=/owner /p' "$SSH_LOCK/owner" || echo free)"
+    echo "  mount-guard allow: ${QL_PATH_MOUNT_ALLOW:-(none)}"
     podman ps -a --filter name='^woow-tailscale' --format '  {{.Names}}  {{.Status}}  {{.Image}}' 2>/dev/null || true
     printf '  %s: %s\n' "$TS_UNIT" "$(systemctl --user is-active "$TS_UNIT" 2>/dev/null || true)"
     exit 0 ;;

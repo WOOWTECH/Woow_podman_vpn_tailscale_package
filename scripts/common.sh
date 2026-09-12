@@ -53,3 +53,15 @@ ts_node_ip() { ts_status "$1" | cut -f3; }
 ts_serve_hash() {
   podman exec "$1" sh -c 'tailscale serve status --json 2>/dev/null || true' 2>/dev/null | sha256sum | cut -d' ' -f1
 }
+
+# ts_allow_broader <container>: add <container> to QL_PATH_MOUNT_ALLOW, the broader-mount
+# allowlist that quadlet-lib's ql_check_path_mounted reads, and export it so it reaches
+# scripts/install.sh - including the copy that runs inside the detached swap unit, which
+# gets it only because scripts/watchdog.sh names it in TS_DETACHED_ENV. Repeatable; the
+# library spells the same thing `ql_check_path_mounted --allow-broader NAME`.
+ts_allow_broader() {
+  local name=${1:?usage: ts_allow_broader <container>}
+  [[ $name =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || ql_die "--allow-broader takes a container name, not '$name'"
+  QL_PATH_MOUNT_ALLOW="${QL_PATH_MOUNT_ALLOW:+$QL_PATH_MOUNT_ALLOW }$name"
+  export QL_PATH_MOUNT_ALLOW
+}
