@@ -41,7 +41,13 @@ fi
 state_dir=$(ts_state_dir)
 [[ -n $state_dir ]] || ql_die "TS_STATE_DIR is not set in $TS_INSTALL_ENV"
 base=${state_dir##*/} parent=${state_dir%/*}
-tar -tzf "$archive" | head -n1 | grep -q "^$base/" || ql_die "$archive does not contain a '$base/' directory; it was made for a different state path"
+# `tar -tzf | head -n1` kills tar with SIGPIPE as soon as the archive has more entries than
+# fit the 64 KiB pipe buffer, and pipefail then fails this guard on a perfectly good archive
+# -- in the middle of a restore. Read the first entry without a pipe.
+first_entry=$(tar -tzf "$archive" 2>/dev/null || true)
+first_entry=${first_entry%%$'\n'*}
+[[ $first_entry == "$base/"* ]] \
+  || ql_die "$archive does not contain a '$base/' directory (first entry: ${first_entry:-none}); it was made for a different state path"
 if ((!yes)); then
   [[ -t 0 ]] || ql_die "restore replaces $state_dir; add --yes to confirm non-interactively"
   read -r -p "Replace the node identity in $state_dir with $archive? Type 'restore': " answer

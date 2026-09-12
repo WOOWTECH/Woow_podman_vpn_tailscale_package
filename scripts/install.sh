@@ -162,7 +162,10 @@ elif [[ ! -d $state_dir ]]; then
 fi
 # A second node on this host needs its own UDP port.
 if [[ $(podman container inspect --format '{{.State.Running}}' "$TS_CONTAINER" 2>/dev/null || true) != true ]]; then
-  if ss -ulnH 2>/dev/null | awk '{print $4}' | grep -qE ":$udp_port\$"; then
+  # Not a pipeline into grep -q: the producer would be killed by SIGPIPE and pipefail would
+  # turn a bound port into "free". Latent while ss fits the 64 KiB pipe buffer.
+  udp_listeners=$(ss -ulnH 2>/dev/null | awk '{print $4}' || true)
+  if grep -qE ":$udp_port\$" <<<"$udp_listeners"; then
     ql_die "UDP port $udp_port is already in use on this host (another tailscale node?). Set TS_UDP_PORT in $TS_NODE_ENV"
   fi
 fi

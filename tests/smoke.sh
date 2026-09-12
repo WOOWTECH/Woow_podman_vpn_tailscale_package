@@ -89,7 +89,8 @@ else
 fi
 
 # 6. WireGuard port
-if ss -ulnH 2>/dev/null | awk '{print $4}' | grep -qE ":$udp_port\$"; then pass "UDP $udp_port is bound"; else fail "UDP $udp_port is not bound"; fi
+udp_listeners=$(ss -ulnH 2>/dev/null | awk '{print $4}' || true)
+if grep -qE ":$udp_port\$" <<<"$udp_listeners"; then pass "UDP $udp_port is bound"; else fail "UDP $udp_port is not bound"; fi
 
 # 7. the installed unit keeps the invariants
 if [[ -f $INSTALLED ]]; then
