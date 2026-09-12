@@ -48,7 +48,9 @@ for f in "$TS_INSTALL_ENV" "$TS_NODE_ENV"; do
   [[ -f $f ]] || continue
   (umask 077 && cp -p -- "$f" "$dest/")
 done
-(cd -- "$dest" && umask 077 && sha256sum -- * >SHA256SUMS 2>/dev/null || true)
+# Best effort, and the `|| true` stays outside the subshell: `A && B || C` inside it reads
+# as an if-then-else that it is not (shellcheck SC2015, an error in the CI runner's 0.9.0).
+(cd -- "$dest" && umask 077 && sha256sum -- * >SHA256SUMS 2>/dev/null) || true
 ((restart)) && ql_info "starting $TS_UNIT again"
 ql_info "backup complete: $dest"
 printf '%s\n' "$dest"
