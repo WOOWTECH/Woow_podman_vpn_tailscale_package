@@ -1,0 +1,26 @@
+# .github/workflows/scripts.yml: repo-specific script checks. The quadlet-ci.yml workflow is
+# vendored and checksummed against scripts/lib/quadlet-lib.manifest, so repo-specific jobs
+# live here instead.
+name: scripts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  detached-env:
+    runs-on: ubuntu-24.04          # systemd 255, same as the WOOWTECH hosts
+    steps:
+      - uses: actions/checkout@v4
+
+      # The transient units of scripts/migrate-legacy.sh start from the user manager's
+      # environment, not from the caller's shell. This asserts that everything the detached
+      # half reads is named on the systemd-run command line, and - where a user manager is
+      # reachable - that a real transient unit receives it. podman, systemctl and
+      # systemd-run are stubbed for everything but that probe; no container is started.
+      - name: Transient units carry the environment they need
+        run: tests/detached-env.sh
