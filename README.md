@@ -267,6 +267,43 @@ It converts the old env file on the way (dropping the Caddy `BASIC_AUTH_*`,
 `CADDY_LAN_PORT` and the settings the unit now forces); `--keep-env` leaves an already
 converted file alone.
 
+### How the legacy container is kept for a rollback
+
+Renaming the legacy container to `woow-tailscale-legacy-<date>` and leaving it stopped is a
+rollback path only while nothing starts it again. The user unit `podman-restart.service`
+runs `podman start --all --filter restart-policy=always` at boot, so on a host where that
+unit is **enabled** a renamed, stopped container whose restart policy is exactly `always`
+revives at the next boot — and then two `tailscaled` share one state directory, one node key
+and one tailnet IP. podman 4.9.3 cannot repair that afterwards: `podman update` only
+rewrites cgroup limits, and a restart policy is fixed at create time.
+
+The script therefore asks `ql_rollback_strategy` — which reads this host's real state, never
+its name — and takes one of two paths. `--dry-run` reports which one applies here, and
+`--status` shows which one a migration used.
+
+| Answer | When | What the swap does | What `--rollback` does |
+|---|---|---|---|
+| `rename` | the unit is disabled, or the container's policy is not `always` | `podman rename woow-tailscale woow-tailscale-legacy-<date>`, left stopped | renames it back |
+| `capture` | the unit is enabled **and** the container's policy is `always` | writes `<backup>/legacy-container/woow-tailscale/` (inspect, create command, image, policy, host networking, the `/var/lib/tailscale` mount) and then a plain `podman rm` — never `podman rm -v` | `ql_recreate_container` recreates it stopped, with its original restart policy |
+
+The capture is taken **before** the watchdog is armed, so a container the library cannot
+replay (an empty `CreateCommand`, i.e. created through the podman API rather than the CLI)
+is refused while the node is still up.
+
+On `woowtechopenclaw` the gateway container has **no** restart policy at all — its
+`Restart=always` lives in the hand-written systemd unit, not on the container — so
+`podman-restart.service` never touches it and a migration there takes the `rename` path even
+though the unit is enabled. On `toypark1234` the unit is disabled, so the migration already
+done there is unchanged.
+
+The capture cannot bring back the container's **writable layer** — anything written inside
+it that did not land in a volume or a bind mount. The node identity lives in the
+`/var/lib/tailscale` mount, which a plain `podman rm` never touches, and the live gateway's
+writable layer holds about 11 kB of runtime scratch, so nothing of value is lost.
+(`ql_capture_container --commit` exists for a stack that mutates its own container; this one
+does not need it.) The container id and the IP/MAC lease are not preserved either.
+`tests/rollback-model.sh` pins both paths.
+
 ### What the transient units can see
 
 The swap and the watchdog run as transient `systemd --user` units, and `systemd-run --user`

@@ -31,6 +31,16 @@
 # QL_PATH_MOUNT_ALLOW, so it reaches the install.sh that runs inside the transient swap
 # unit - which is the only place that guard runs at all.
 #
+# Rollback shape (STANDARD 7a): the legacy container is kept for a rollback either by
+# renaming it to woow-tailscale-legacy-<date> and leaving it stopped, or - where the user
+# unit podman-restart.service is enabled AND the legacy container's restart policy is exactly
+# `always`, because a renamed copy would revive at the next boot and a second tailscaled
+# would claim the same state directory, node key and tailnet IP - by capturing it into the
+# backup directory and removing it. ql_rollback_strategy asks this host's real state, never
+# its name; --dry-run reports which path applies, and --status records which one was used.
+# The capture is taken before the watchdog is armed, so a container whose create command
+# cannot be replayed is refused before any downtime.
+#
 # Downtime: the tailnet path and every `tailscale serve` forward are down for roughly
 # 15-30 seconds.
 # shellcheck source-path=SCRIPTDIR
@@ -66,7 +76,7 @@ while (($#)); do
     --finish) mode=finish ;;
     --swap) mode=swap ;;                     # internal: runs inside the transient unit
     --watchdog-fire) mode=watchdog_fire ;;   # internal: the timer's target
-    -h | --help) sed -n '2,35p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,45p' "$0"; exit 0 ;;
     *) ql_die "unknown option $1 (see --help)" ;;
   esac
   shift
@@ -108,18 +118,26 @@ release_ssh_lock() {
 
 # ---- rollback: the new node down first, then the legacy container back --------------------
 rollback() {
-  local legacy units ip id
+  local legacy units ip id bdir captured=''
   legacy=$(state_get LEGACY_NAME)
   units=$(state_get LEGACY_UNITS)
   ip=$(state_get NODE_IP)
   id=$(state_get NODE_ID)
-  if [[ -z $legacy ]]; then
+  bdir=$(state_get BACKUP_DIR)
+  [[ -n $bdir ]] && captured=$bdir/legacy-container/$TS_CONTAINER/meta
+  if [[ -z $legacy && ! -f ${captured:-/nonexistent} ]]; then
+    # no state and no capture: fall back to the one renamed container on the host
     mapfile -t cands < <(podman ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^woow-tailscale-legacy-' || true)
     ((${#cands[@]} == 1)) || ql_die "no migration state and ${#cands[@]} woow-tailscale-legacy-* containers; roll back by hand"
     legacy=${cands[0]}
   fi
-  podman container exists "$legacy" >/dev/null 2>&1 || ql_die "the legacy container $legacy does not exist"
-  ql_warn "rolling back: $TS_UNIT out, $legacy back as $TS_CONTAINER"
+  if [[ -n $legacy ]]; then
+    podman container exists "$legacy" >/dev/null 2>&1 || ql_die "the legacy container $legacy does not exist"
+    ql_warn "rolling back: $TS_UNIT out, $legacy back as $TS_CONTAINER"
+  else
+    [[ -f $captured ]] || ql_die "neither a renamed legacy container nor a capture in ${bdir:-?}; roll back by hand"
+    ql_warn "rolling back: $TS_UNIT out, $TS_CONTAINER recreated from ${captured%/meta}"
+  fi
   systemctl --user stop "$TS_UNIT" 2>/dev/null || true
   ql_wait_until 60 "the Quadlet node to stop" bash -c "[[ \$(podman container inspect --format '{{.State.Running}}' $TS_CONTAINER 2>/dev/null || echo false) != true ]]" || true
   if [[ -f $HOME/.local/state/woow-quadlet/$TS_APP/manifest ]]; then ql_uninstall_units "$TS_APP"; fi
@@ -128,7 +146,8 @@ rollback() {
       || ql_die "a container named $TS_CONTAINER exists that is neither the Quadlet one nor $legacy; resolve by hand"
     podman rm -f "$TS_CONTAINER" >/dev/null
   fi
-  podman rename "$legacy" "$TS_CONTAINER"
+  # renamed back, or recreated from the capture the swap took - whichever this host needed
+  ts_legacy_restore "${legacy#woow-tailscale-legacy-}" "${bdir:-/nonexistent}" "$TS_CONTAINER"
   if [[ -n $units ]]; then
     for u in $units; do systemctl --user enable "$u" >/dev/null 2>&1 || ql_warn "could not enable $u"; done
     # shellcheck disable=SC2086 # a space-separated list of unit names
@@ -154,6 +173,7 @@ case $mode in
   status)
     if [[ -f $MSTATE ]]; then sed 's/^/  /' "$MSTATE"; else echo "  no migration state in $MSTATE"; fi
     echo "  watchdog: $(ts_wd_state "$WD_UNIT")   commit marker: $([[ -f $COMMIT_MARKER ]] && echo yes || echo no)"
+    echo "  rollback shape: $(state_get STRATEGY 2>/dev/null || true)"
     echo "  ssh-path lock: $([[ -d $SSH_LOCK ]] && sed -n 's/^owner=/owner /p' "$SSH_LOCK/owner" || echo free)"
     echo "  mount-guard allow: ${QL_PATH_MOUNT_ALLOW:-(none)}"
     podman ps -a --filter name='^woow-tailscale' --format '  {{.Names}}  {{.Status}}  {{.Image}}' 2>/dev/null || true
@@ -187,6 +207,8 @@ case $mode in
     confirm "Remove the legacy container ${legacy:-none} and file away ${units:-no legacy unit}? (no rollback afterwards)"
     if [[ -n $legacy ]] && podman container exists "$legacy" >/dev/null 2>&1; then
       podman rm "$legacy" >/dev/null && ql_info "removed $legacy"
+    elif [[ $(state_get STRATEGY) == capture ]]; then
+      ql_info "no legacy container to remove: the swap captured it into $(state_get BACKUP_DIR)/legacy-container and removed it then. Delete that backup directory when you are sure"
     fi
     for u in $units; do
       f=$HOME/.config/systemd/user/$u
@@ -230,9 +252,19 @@ if [[ $mode == swap ]]; then
   else
     ql_backup_dir "$state_dir" "$B/state-cold.tgz" >/dev/null || ql_warn "the cold state archive failed"
   fi
-  podman rename "$TS_CONTAINER" "$legacy_name" || fail "renaming the legacy container failed"
+  # ts_legacy_retire ends the script on failure; inside the swap a failure has to roll back
+  # instead, so it runs in a subshell whose exit status `fail` can act on. It changes only
+  # container state, which a subshell does not hide.
+  strategy=$(state_get STRATEGY)
+  [[ $strategy == capture ]] && legacy_name=''
+  ( ts_legacy_retire "${strategy:-rename}" "$D" "$B" "$TS_CONTAINER" ) \
+    || fail "retiring the legacy container ($strategy) failed"
   state_set LEGACY_NAME "$legacy_name"
-  ql_info "legacy container kept as $legacy_name"
+  if [[ -n $legacy_name ]]; then
+    ql_info "legacy container kept as $legacy_name"
+  else
+    ql_info "legacy container captured into $B/legacy-container/$TS_CONTAINER and removed"
+  fi
   bash "$REPO/scripts/install.sh" --no-build || fail "install.sh failed"
   ql_wait_until 120 "the node to report Running" bash -c "[[ \$(podman exec $TS_CONTAINER sh -c 'tailscale status --json 2>/dev/null | jq -r .BackendState' 2>/dev/null) == Running ]]" \
     || fail "the node did not reach Running"
@@ -292,6 +324,13 @@ legacy $TS_CONTAINER: image $legacy_image
 EOF
 [[ $node_state == Running ]] || ql_warn "the node is '$node_state', not Running: the identity check after the swap will be weaker"
 
+# How the legacy container is kept for a rollback: renamed and left stopped, or captured and
+# removed. Asked of this host, never of its name (STANDARD 7a, quadlet-lib >= 1.4.0). Two
+# tailscaled on one state directory is the failure this prevents: the node key, the tailnet
+# IP and the serve configuration all live there, and a revived legacy container would claim
+# them back from the Quadlet node.
+STRATEGY=$(ql_rollback_strategy "$TS_CONTAINER")
+
 # the node's settings, from what the container actually runs
 declare -A want=()
 while IFS= read -r line; do
@@ -310,6 +349,11 @@ if dry; then
   ql_info "[dry-run] $TS_NODE_ENV would get: ${!want[*]}"
   ql_info "[dry-run] $TS_INSTALL_ENV would get TS_STATE_DIR=$state_dir"
   ql_info "[dry-run] then: backup, build $new_image, arm a $watchdog watchdog, and swap in a transient unit"
+  if [[ $STRATEGY == capture ]]; then
+    ql_info "[dry-run] the swap would capture $TS_CONTAINER into the backup directory and remove it; --rollback recreates it"
+  else
+    ql_info "[dry-run] the swap would rename $TS_CONTAINER to woow-tailscale-legacy-$(date +%Y%m%d) and leave it stopped"
+  fi
   exit 0
 fi
 confirm "Migrate this node in place (about 15-30 s of tailnet downtime, watchdog $watchdog)? Make sure you are NOT connected over its tailnet address."
@@ -341,8 +385,12 @@ fi
 if [[ $state_type == bind ]]; then
   ql_backup_dir "$state_src" "$B/state-hot.tgz" >/dev/null || ql_warn "the hot state archive failed"
 fi
+# On the capture path the rollback copy is written now, while the node is still up: a
+# container whose create command cannot be replayed is refused before any downtime.
+if [[ $STRATEGY == capture ]]; then ts_legacy_capture "$B" "$TS_CONTAINER"; fi
 bash "$REPO/scripts/install.sh" --build-only || ql_die "building $new_image failed; nothing else was changed"
 state_set DATE "$D"
+state_set STRATEGY "$STRATEGY"
 state_set PHASE prepared
 state_set LEGACY_UNITS "${legacy_units[*]}"
 state_set STATE_DIR "$state_dir"
