@@ -1,0 +1,17 @@
+{
+  "headscale_without_global_force": {
+    "argv": ["headscale", "nodes", "delete", "--identifier", "9"],
+    "returncode": 0,
+    "node_present_after": true
+  },
+  "podman_network_without_force": {
+    "argv": ["podman", "network", "rm", "live-net"],
+    "returncode": 2,
+    "network_present_after": true
+  },
+  "tailscale_type_peerapi": {
+    "argv": ["tailscale", "ping", "--type=peerapi", "100.64.0.1"],
+    "returncode": 1,
+    "stderr": "flag provided but not defined: -type"
+  }
+}

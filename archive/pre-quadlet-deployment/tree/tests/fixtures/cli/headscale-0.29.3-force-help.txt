@@ -1,0 +1,13 @@
+Observed on Headscale 0.29.3, relevant help excerpts:
+
+`headscale --help` global flag:
+      --force   Disable prompts and forces the execution
+
+`headscale nodes delete --help`:
+Usage:
+  headscale nodes delete [flags]
+
+Flags:
+  -i, --identifier uint   Node identifier (ID)
+
+The force switch is a global Headscale flag, not a nodes-delete flag.

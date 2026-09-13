@@ -1,0 +1,16 @@
+[Unit]
+Description=Rootless Odoo 18 stack
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@PROJECT_ROOT@
+ExecStart=@PROJECT_ROOT@/scripts/service.sh start
+ExecStop=@PROJECT_ROOT@/scripts/service.sh stop
+TimeoutStartSec=600
+TimeoutStopSec=120
+
+[Install]
+WantedBy=default.target

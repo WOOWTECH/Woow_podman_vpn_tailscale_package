@@ -1,0 +1,13 @@
+# local env with secrets
+.env
+.env.gateway
+runtime/
+backups/
+*preauth*.key
+*enrollment*.key
+# any locally-generated caddy/mkcert artifacts
+*.pem
+data/
+config/
+__pycache__/
+*.pyc

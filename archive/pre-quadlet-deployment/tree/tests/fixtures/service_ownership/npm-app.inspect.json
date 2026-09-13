@@ -1,0 +1,31 @@
+[
+  {
+    "Name": "/npm-app",
+    "Image": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "ImageName": "docker.io/jc21/nginx-proxy-manager@sha256:52b2c59994f3d36acfcf70a1626f29734df0ed8c71bacc0269f78b6f939858bb",
+    "State": {"Running": true},
+    "Config": {
+      "Image": "docker.io/jc21/nginx-proxy-manager@sha256:52b2c59994f3d36acfcf70a1626f29734df0ed8c71bacc0269f78b6f939858bb",
+      "Labels": {
+        "io.woow.nginxpm.managed": "true",
+        "io.woow.nginxpm.owner": "@NPM_OWNER@",
+        "com.docker.compose.project": "nginxpm",
+        "com.docker.compose.project.working_dir": "@HOME@/Woow_podman_nginxpm",
+        "com.docker.compose.project.config_files": "@HOME@/Woow_podman_nginxpm/docker-compose.yml",
+        "com.docker.compose.service": "app",
+        "io.podman.compose.version": "1.0.6"
+      }
+    },
+    "HostConfig": {
+      "PortBindings": {
+        "80/tcp": [{"HostIp": "", "HostPort": "80"}],
+        "443/tcp": [{"HostIp": "0.0.0.0", "HostPort": "443"}],
+        "81/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18081"}]
+      }
+    },
+    "Mounts": [
+      {"Type": "volume", "Name": "npm-app-data", "Source": "/home/user/.local/share/containers/storage/volumes/npm-app-data/_data", "Destination": "/data", "RW": true},
+      {"Type": "volume", "Name": "npm-letsencrypt", "Source": "/home/user/.local/share/containers/storage/volumes/npm-letsencrypt/_data", "Destination": "/etc/letsencrypt", "RW": true}
+    ]
+  }
+]

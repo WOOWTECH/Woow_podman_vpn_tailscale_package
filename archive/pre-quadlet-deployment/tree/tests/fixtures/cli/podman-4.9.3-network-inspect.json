@@ -1,0 +1,28 @@
+[
+  {
+    "name": "live-net",
+    "id": "7ac43a27c034e2a6f1d38c32d8e280d7c53f21d938839f8b2c7bbdb90cbf19ff",
+    "driver": "bridge",
+    "network_interface": "podman1",
+    "created": "2026-08-28T04:55:41.102739516+08:00",
+    "subnets": [
+      {
+        "subnet": "10.89.0.0/24",
+        "gateway": "10.89.0.1"
+      }
+    ],
+    "ipv6_enabled": false,
+    "internal": false,
+    "dns_enabled": true,
+    "ipam_options": {
+      "driver": "host-local"
+    },
+    "containers": {},
+    "labels": {
+      "org.woow-tailscale.project": "woow-tailscale-gateway",
+      "org.woow-tailscale.role": "live-test",
+      "org.woow-tailscale.managed-by": "woow-gateway-lifecycle",
+      "org.woow-tailscale.invocation": "inv-1"
+    }
+  }
+]

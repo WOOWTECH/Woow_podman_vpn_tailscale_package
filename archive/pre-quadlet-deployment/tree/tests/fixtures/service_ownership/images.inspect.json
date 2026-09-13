@@ -1,0 +1,4 @@
+{
+  "docker.io/jc21/nginx-proxy-manager:2.15.1@sha256:52b2c59994f3d36acfcf70a1626f29734df0ed8c71bacc0269f78b6f939858bb": [{"Id": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}],
+  "docker.io/library/odoo:18.0@sha256:259fa933bf3ee7f3e375bd74d1e0bc28bd75955159723be477359e0fdb8acf67": [{"Id": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}]
+}
