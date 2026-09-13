@@ -52,7 +52,7 @@ export QL_APP=$TS_APP
 dry() { [[ ${QL_DRY_RUN:-0} == 1 ]]; }
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/$TS_APP-install.XXXXXX")
-trap 'rm -rf "$WORK"' EXIT
+ql_cleanup work rm -rf "$WORK"
 
 # render_units <install-envfile>: render quadlet/ into $WORK/out; sets IMAGE
 render_units() {
