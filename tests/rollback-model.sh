@@ -186,6 +186,24 @@ t_migrate_legacy_asks_the_host_before_it_renames() {
   return 0
 }
 
+t_the_capture_path_works_with_an_empty_suffix() {
+  # the swap passes an empty suffix on the capture path (nothing is renamed there)
+  # A capture-path cutover renames nothing, so it has no <name>-legacy-<suffix> to name and
+  # passes an empty suffix. `${2:?}` would abort the script there; `${2-}` must not.
+  enable_restart_unit
+  mk_legacy woow-tailscale always
+  expect_ok ts_legacy_capture "$T/bk" woow-tailscale
+  expect_ok ts_legacy_retire capture "" "$T/bk" woow-tailscale
+  podman container exists woow-tailscale && die_t "woow-tailscale was not removed"
+  expect_ok ts_legacy_restore "" "$T/bk" woow-tailscale
+  has "$OUT" "recreated woow-tailscale"
+  eq "$(ql_container_restart_policy woow-tailscale)" always "the original restart policy comes back"
+  # and with no capture either, the refusal names only what could exist
+  expect_fail ts_legacy_restore "" "$T/empty" woow-tailscale
+  hasnt "$OUT" "-legacy- " "an empty suffix must not be spelled into the message"
+  return 0
+}
+
 run() {
   local t=$1 log rc
   [[ -z $FILTER || $t == *"$FILTER"* ]] || return 0

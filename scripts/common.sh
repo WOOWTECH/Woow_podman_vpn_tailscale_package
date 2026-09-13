@@ -99,11 +99,14 @@ ts_legacy_capture() {
 # ts_legacy_retire <strategy> <suffix> <backup dir> <container>...: take the legacy
 # containers out of the new stack's way, in the shape the strategy asked for.
 ts_legacy_retire() {
-  local strategy=${1:?} sfx=${2:?} bk=${3:?} c
+  # The suffix is empty on the capture path: nothing is renamed there, so there is no
+  # <name>-legacy-<suffix> to name. ${2-} rather than ${2:?}, which would abort the script.
+  local strategy=${1:?} sfx=${2-} bk=${3:?} c
   shift 3
   for c in "$@"; do
     case $strategy in
       rename)
+        [[ -n $sfx ]] || ql_die "the rename path needs a suffix for $c-legacy-<suffix>"
         podman rename "$c" "$c-legacy-$sfx" || ql_die "podman rename $c failed"
         ql_info "renamed $c -> $c-legacy-$sfx (stopped, kept for --rollback)" ;;
       capture)
@@ -121,17 +124,19 @@ ts_legacy_retire() {
 # whichever shape the cutover used. A recreated container comes back stopped and with its
 # original restart policy; the caller starts it, exactly as it starts a renamed one.
 ts_legacy_restore() {
-  local sfx=${1:?} bk=${2:?} c
+  # An empty suffix means the cutover captured rather than renamed: there is no
+  # <name>-legacy-<suffix> to look for, only the rollback copy.
+  local sfx=${1-} bk=${2:?} c
   shift 2
   for c in "$@"; do
-    if podman container exists "$c-legacy-$sfx"; then
+    if [[ -n $sfx ]] && podman container exists "$c-legacy-$sfx"; then
       podman rename "$c-legacy-$sfx" "$c" || ql_die "podman rename $c-legacy-$sfx failed"
       ql_info "renamed $c-legacy-$sfx -> $c"
     elif [[ -f $bk/legacy-container/$c/meta ]]; then
       ql_recreate_container "$bk" "$c" >/dev/null || ql_die "could not recreate $c from $bk"
       ql_info "recreated $c from $bk/legacy-container/$c (stopped, with its original restart policy)"
     else
-      ql_die "neither the renamed container $c-legacy-$sfx nor a rollback copy in $bk exists; restore $c by hand"
+      ql_die "neither the renamed container ${sfx:+$c-legacy-$sfx }nor a rollback copy in $bk exists; restore $c by hand"
     fi
   done
 }
