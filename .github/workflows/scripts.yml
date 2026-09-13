@@ -24,3 +24,23 @@ jobs:
       # systemd-run are stubbed for everything but that probe; no container is started.
       - name: Transient units carry the environment they need
         run: tests/detached-env.sh
+
+  rollback-model:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # tests/rollback-model.sh drives the legacy rollback helpers of migrate-legacy.sh
+      # against the doubles in tests/shims (podman, systemctl): no container is created and
+      # the runner's user manager is never touched.
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck --version | sed -n 2p
+
+      - name: shellcheck the test doubles
+        run: shellcheck -x tests/shims/podman tests/shims/systemctl
+
+      - name: Legacy rollback model (rename vs capture)
+        run: tests/rollback-model.sh
