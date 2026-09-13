@@ -1,0 +1,12 @@
+Observed on Tailscale 1.102.0 (`tailscale ping --help`), relevant excerpt:
+
+USAGE
+  tailscale ping [flags] <ip-or-dns-name>
+
+FLAGS
+  --peerapi
+        use PeerAPI instead of ICMP/WireGuard ping
+  --timeout duration
+        timeout before giving up
+
+There is no --type flag in this command.

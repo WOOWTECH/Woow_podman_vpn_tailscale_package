@@ -1,0 +1,34 @@
+[Unit]
+Description=Woow Tailscale (podman quadlet)
+Wants=network-online.target podman-tailscale-network.service
+After=network-online.target podman-tailscale-network.service
+
+[Container]
+ContainerName=woow-tailscale
+Image=localhost/woow-tailscale:latest
+HostName=%H
+# NET_ADMIN + tun for kernel-mode subnet router / exit node.
+AddCapability=NET_ADMIN
+AddCapability=NET_RAW
+AddDevice=/dev/net/tun
+# WireGuard direct P2P; expose on host firewall.
+PublishPort=41641:41641/udp
+# tailscale web UI, localhost-only. Reverse-proxy quadlet exposes it to LAN.
+PublishPort=127.0.0.1:8088:8088/tcp
+# Persist state on a named volume the same file the compose file uses.
+Volume=woow-tailscale-state:/var/lib/tailscale
+Network=woow-tailscale.network
+# Env file with TS_* variables. Rootless mode: place at ~/.config/containers/systemd/tailscale.env
+EnvironmentFile=%h/.config/containers/systemd/tailscale.env
+HealthCmd=tailscale status --peers=false
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=10s
+
+[Service]
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

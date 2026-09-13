@@ -1,0 +1,31 @@
+[
+  {
+    "Name": "/odoo18-web",
+    "Image": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "ImageName": "docker.io/library/odoo@sha256:259fa933bf3ee7f3e375bd74d1e0bc28bd75955159723be477359e0fdb8acf67",
+    "State": {"Running": true},
+    "Config": {
+      "Image": "docker.io/library/odoo@sha256:259fa933bf3ee7f3e375bd74d1e0bc28bd75955159723be477359e0fdb8acf67",
+      "Labels": {
+        "io.woowtech.stack": "odoo18",
+        "io.woowtech.owner": "@UID@",
+        "com.docker.compose.project": "odoo18",
+        "com.docker.compose.project.working_dir": "@HOME@/Woow_podman_odoo",
+        "com.docker.compose.project.config_files": "@HOME@/Woow_podman_odoo/docker-compose.yml",
+        "com.docker.compose.service": "web",
+        "io.podman.compose.version": "1.0.6"
+      }
+    },
+    "HostConfig": {
+      "PortBindings": {
+        "8069/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18069"}]
+      }
+    },
+    "Mounts": [
+      {"Type": "volume", "Name": "odoo18-web-data", "Source": "/home/user/.local/share/containers/storage/volumes/odoo18-web-data/_data", "Destination": "/var/lib/odoo", "RW": true},
+      {"Type": "bind", "Source": "@HOME@/Woow_podman_odoo/addons", "Destination": "/mnt/extra-addons", "RW": false},
+      {"Type": "bind", "Source": "@HOME@/Woow_podman_odoo/.runtime/config/odoo.conf", "Destination": "/etc/odoo/odoo.conf", "RW": false},
+      {"Type": "bind", "Source": "@HOME@/Woow_podman_odoo/scripts/odoo-healthcheck.py", "Destination": "/usr/local/bin/odoo-healthcheck", "RW": false}
+    ]
+  }
+]
