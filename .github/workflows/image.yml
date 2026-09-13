@@ -1,0 +1,41 @@
+# Image gate: the entrypoint is shell that runs as PID 1 in the node container, and the base
+# image is pinned. Build it and check that the version we claim is the version we get.
+name: image
+
+on:
+  push:
+    branches: [main]
+    paths: ['Containerfile', 'entrypoint.sh', 'quadlet/woow-tailscale.container', '.github/workflows/image.yml']
+  pull_request:
+    paths: ['Containerfile', 'entrypoint.sh', 'quadlet/woow-tailscale.container', '.github/workflows/image.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install podman and shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman shellcheck
+          podman --version
+
+      - name: shellcheck entrypoint.sh
+        run: shellcheck entrypoint.sh
+
+      - name: Build the pinned image
+        run: |
+          tag=$(sed -n 's/^Image=localhost\/woow-tailscale://p' quadlet/woow-tailscale.container | head -n1)
+          for i in 1 2 3; do podman build --format docker -t "localhost/woow-tailscale:$tag" . && break; sleep 10; done
+          podman image exists "localhost/woow-tailscale:$tag"
+
+      - name: The image carries the pinned tailscale version
+        run: |
+          tag=$(sed -n 's/^Image=localhost\/woow-tailscale://p' quadlet/woow-tailscale.container | head -n1)
+          got=$(podman run --rm --network none --entrypoint tailscale "localhost/woow-tailscale:$tag" version | head -n1)
+          echo "tailscale version: $got"
+          case "$got" in "${tag%-r*}"*) ;; *) echo "expected ${tag%-r*}, got $got" >&2; exit 1 ;; esac

@@ -28,9 +28,13 @@ TS_UDP_PORT="${TS_UDP_PORT:-41641}"
 TS_LOG_LEVEL="${TS_LOG_LEVEL:-info}"                     # trace|debug|info|notice|warning|error|fatal
 
 # --- Web UI toggle -----------------------------------------------------------
-# TS_WEB_UI=true  → 開啟 tailscale web --listen 0.0.0.0:8088 (預設用 reverse-proxy 加 basic auth 才 LAN 曝露)
-TS_WEB_UI="${TS_WEB_UI:-true}"
-TS_WEB_LISTEN="${TS_WEB_LISTEN:-0.0.0.0:8088}"
+# `tailscale web` is a WRITABLE admin UI with no authentication: whoever reaches it can
+# change this node's settings and log it out. Off by default, and bound to loopback.
+# The Quadlet unit forces TS_WEB_LISTEN=127.0.0.1:8088; to expose it anywhere else you
+# have to say so explicitly with TS_WEB_ALLOW_NONLOCAL=true and put auth in front.
+TS_WEB_UI="${TS_WEB_UI:-false}"
+TS_WEB_LISTEN="${TS_WEB_LISTEN:-127.0.0.1:8088}"
+TS_WEB_ALLOW_NONLOCAL="${TS_WEB_ALLOW_NONLOCAL:-false}"
 
 # --- Extra passthrough -------------------------------------------------------
 TS_EXTRA_UP_ARGS="${TS_EXTRA_UP_ARGS:-}"                 # 任意額外 `tailscale up` 參數
@@ -55,6 +59,12 @@ if [[ "$TS_USERSPACE_NETWORKING" == "true" ]]; then
   log "userspace networking enabled (no NET_ADMIN required, subnet-router/exit-node still work but slower)"
 fi
 
+# TS_LOG_LEVEL was parsed but never used. tailscaled's knob is --verbose.
+case "$TS_LOG_LEVEL" in
+  trace) tailscaled_args+=(--verbose=2) ;;
+  debug) tailscaled_args+=(--verbose=1) ;;
+esac
+
 if [[ "$TS_ALWAYS_USE_DERP" == "true" ]]; then
   export TS_DEBUG_ALWAYS_USE_DERP=true
   log "TS_DEBUG_ALWAYS_USE_DERP=true — all traffic routed via DERP"
@@ -73,7 +83,7 @@ tailscaled "${tailscaled_args[@]}" &
 TAILSCALED_PID=$!
 
 # Wait for socket ready
-for i in {1..30}; do
+for _ in {1..30}; do
   [[ -S /var/run/tailscale/tailscaled.sock ]] && break
   sleep 0.5
 done
@@ -86,8 +96,8 @@ fi
 # ============================================================================
 # 2. login_server migration (mirror HA reconcile-login-server logic)
 # ============================================================================
-# If TS_LOGIN_SERVER differs from current session, force logout to re-register.
-CURRENT_LOGIN_URL="$(tailscale status --json 2>/dev/null | jq -r '.CurrentTailnet.MagicDNSSuffix // empty' || true)"
+# If TS_LOGIN_SERVER differs from the one this state directory was enrolled with, force a
+# logout so the node re-registers against the new control plane.
 STATE_LOGIN="$STATE_DIR/.last_login_server"
 if [[ -f "$STATE_LOGIN" ]]; then
   PREV_LOGIN="$(cat "$STATE_LOGIN")"
@@ -144,9 +154,22 @@ fi
 # 4. Optional web UI on :8088
 # ============================================================================
 if [[ "$TS_WEB_UI" == "true" ]]; then
+  case "$TS_WEB_LISTEN" in
+    127.0.0.1:* | localhost:* | "[::1]:"*) ;;
+    *)
+      if [[ "$TS_WEB_ALLOW_NONLOCAL" != "true" ]]; then
+        log "ERROR: TS_WEB_LISTEN=$TS_WEB_LISTEN is not a loopback address."
+        log "The tailscale web UI is writable and has no authentication; anyone who reaches"
+        log "it can log this node out. Bind it to 127.0.0.1:8088 and reach it through a tailnet"
+        log "serve forward or ssh -L, or set TS_WEB_ALLOW_NONLOCAL=true if you really mean it."
+        exit 1
+      fi
+      log "WARNING: TS_WEB_LISTEN=$TS_WEB_LISTEN exposes an unauthenticated admin UI (TS_WEB_ALLOW_NONLOCAL=true)"
+      ;;
+  esac
   # Small delay so tailscaled's localapi is definitely ready before `tailscale web` connects.
   sleep 1
-  log "starting tailscale web on $TS_WEB_LISTEN (put a reverse-proxy with basic-auth in front!)"
+  log "starting tailscale web on $TS_WEB_LISTEN"
   tailscale web --listen "$TS_WEB_LISTEN" --readonly=false &
 fi
 

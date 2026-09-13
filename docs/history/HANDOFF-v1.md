@@ -1,5 +1,13 @@
 # HANDOFF — Woow_podman_vpn_tailscale_package（v1 initial build）
 
+> **歷史文件，請勿照做。** 這份交接文件描述的是 v1 的 compose + bridge 網路 + Caddy sidecar
+> 設計，該設計已於 v2 移除（rootless Podman 給不了 kernel 模式需要的 `NET_ADMIN`，sidecar 也會
+> 收到含 `TS_AUTHKEY` 的整份 env 檔）。它還叫你對 Quadlet 產生的 unit 執行
+> `systemctl --user enable`，那會建立永遠不該存在的 symlink。
+> **目前的安裝方式見 [README.md](../../README.md) / [README_zh-TW.md](../../README_zh-TW.md)：**
+> `./scripts/install.sh`，單一 host-network + userspace unit，`WantedBy=default.target` 已由
+> Quadlet 處理，不需要也不可以自己 enable。保留本檔只為了說明 v1 的設計取捨。
+
 > 版本：v1（initial build，2026-08-26）
 > 對稱姊妹倉：`Woow_ha_vpn_tailscale_package`（HA add-on 版）
 > 目標部署：`Hermes Agent (192.168.2.197)` 為第一測試點，`podman-mcp (192.168.2.191)` 為次候選

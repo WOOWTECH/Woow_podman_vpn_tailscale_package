@@ -1,6 +1,11 @@
-# local env with secrets
+# local env with secrets (the installed copies live in ~/.config/woow-tailscale/)
 .env
-# any locally-generated caddy/mkcert artifacts
+*.env
+!config/*.env.example
+!config/node/*.env.example
+!tests/fixtures/*.env
+# locally generated certificates
 *.pem
-data/
-config/
+# backups and state tarballs
+*.tar
+*.tgz
