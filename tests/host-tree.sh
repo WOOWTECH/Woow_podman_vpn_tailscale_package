@@ -92,6 +92,75 @@ load() {
 GATEWAY_EXEC='ExecStart=/usr/bin/podman run --rm --name woow-tailscale-gateway --network host localhost/woow-tailscale-gateway:latest'
 
 # ---- ts_legacy_units must not match woow-tailscale-gateway --------------------------------
+#
+# Each Exec form is pinned by its OWN case. A single case with several Exec lines is a no-op
+# control: the two-line compose unit below stayed green while its `podman start woow-tailscale`
+# line was undiscovered, because the `stop -t 10` line still matched. The regression hides
+# until a unit has ONLY the broken form - which is exactly openclaw's shape.
+#
+# one_form <unit name> <single Exec line> <what it is> [expected output]
+one_form() {
+  HOME=$(mk_home)
+  export HOME
+  mk_unit "$HOME" "$1" "$2"
+  load
+  eq "$(ts_legacy_units)" "${4-$1}" "$3"
+}
+
+t_legacy_units_start_only() {
+  one_form container-woow-tailscale.service \
+    'ExecStart=/usr/bin/podman start woow-tailscale' 'podman start <name>'
+}
+
+t_legacy_units_stop_only() {
+  one_form container-woow-tailscale.service \
+    'ExecStart=/usr/bin/podman stop woow-tailscale' 'podman stop <name>'
+}
+
+t_legacy_units_stop_timeout() {
+  one_form container-woow-tailscale.service \
+    'ExecStop=/usr/bin/podman stop -t 10 woow-tailscale' 'podman stop -t N <name>'
+}
+
+t_legacy_units_restart_only() {
+  one_form ts-restart.service \
+    'ExecStart=/usr/bin/podman restart woow-tailscale' 'podman restart <name>'
+}
+
+t_legacy_units_no_abspath() {
+  one_form ts-bare.service \
+    'ExecStart=podman start woow-tailscale' 'podman without /usr/bin/'
+}
+
+t_legacy_units_quoted_name() {
+  one_form ts-quoted.service \
+    'ExecStart=/usr/bin/podman start "woow-tailscale"' 'a double-quoted name'
+}
+
+t_legacy_units_single_quoted_name() {
+  one_form ts-sq.service \
+    "ExecStart=/usr/bin/podman stop 'woow-tailscale'" 'a single-quoted name'
+}
+
+t_legacy_units_run_name() {
+  one_form ts-manual.service \
+    'ExecStart=/usr/bin/podman run --rm --name woow-tailscale --network host localhost/woow-tailscale:latest' \
+    'a hand-made podman run unit'
+}
+
+t_legacy_units_run_equals_name() {
+  one_form ts-run-eq.service \
+    'ExecStart=/usr/bin/podman run -d --name=woow-tailscale localhost/woow-tailscale:latest' \
+    '--name=<name>'
+}
+
+# the negative, per form: the gateway must not be discovered by a bare start either
+t_legacy_units_start_only_gateway() {
+  one_form gw-start.service \
+    'ExecStart=/usr/bin/podman start woow-tailscale-gateway' \
+    'podman start woow-tailscale-gateway must not be discovered' ''
+}
+
 t_legacy_units_positive() {
   HOME=$(mk_home)
   export HOME
@@ -232,6 +301,16 @@ t_script_run_from_host_tree() {
   has "$out" "pre-Quadlet deployment tree" "the diagnosis"
 }
 
+case_ legacy-units-start-only t_legacy_units_start_only
+case_ legacy-units-stop-only t_legacy_units_stop_only
+case_ legacy-units-stop-timeout t_legacy_units_stop_timeout
+case_ legacy-units-restart-only t_legacy_units_restart_only
+case_ legacy-units-no-abspath t_legacy_units_no_abspath
+case_ legacy-units-quoted-name t_legacy_units_quoted_name
+case_ legacy-units-single-quoted-name t_legacy_units_single_quoted_name
+case_ legacy-units-run-name t_legacy_units_run_name
+case_ legacy-units-run-equals-name t_legacy_units_run_equals_name
+case_ legacy-units-start-only-gateway t_legacy_units_start_only_gateway
 case_ legacy-units-positive t_legacy_units_positive
 case_ legacy-units-rejects-gateway t_legacy_units_rejects_gateway
 case_ require-container-fresh-host t_require_container_fresh_host

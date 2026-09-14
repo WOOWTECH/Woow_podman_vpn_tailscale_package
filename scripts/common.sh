@@ -36,14 +36,27 @@ ts_state_dir() { ql_expand_home "$(ts_env_value "$TS_INSTALL_ENV" TS_STATE_DIR)"
 # `ExecStart=/usr/bin/podman run --name woow-tailscale-gateway` - openclaw's live gateway,
 # a different lineage - and a name override would then have handed its unit to the swap,
 # which stops and disables what it discovers. tests/host-tree.sh pins that negative case.
+#
+# The argument between the verb and the name is OPTIONAL. An earlier anchoring wrote
+# `...(start|stop|run|restart)[[:space:]].*[[:space:]]$n(...)`, whose `.*[[:space:]]`
+# demanded a SECOND whitespace run after the verb - so the canonical
+# `ExecStart=/usr/bin/podman start woow-tailscale` was NOT discovered, while
+# `ExecStop=/usr/bin/podman stop -t 10 woow-tailscale` was. An undiscovered unit is never
+# stopped and never `systemctl --user disable`d by migrate-legacy.sh, and on a host where
+# podman-restart.service is enabled (woowtechopenclaw) it revives the container at the next
+# boot against the Quadlet-managed one. tests/host-tree.sh now pins one case per Exec form.
 ts_legacy_units() {
   local d=$HOME/.config/systemd/user f n=$TS_CONTAINER
   [[ -d $d ]] || return 0
+  # the name, optionally quoted, anchored on whitespace-or-end
+  local q='["'"'"']?'
+  local name="${q}${n}${q}([[:space:]]|\$)"
+  local ex='^[[:space:]]*Exec(Start|StartPre|StartPost|Stop|StopPost|Reload)='
   for f in "$d"/*.service; do
     [[ -f $f ]] || continue
     [[ ${f##*/} == "$TS_UNIT" ]] && continue
-    if grep -qE "^[[:space:]]*Exec(Start|StartPre|Stop)=.*[[:space:]](start|stop|run|restart)[[:space:]].*[[:space:]]$n([[:space:]]|\$)" "$f" \
-      || grep -qE "^[[:space:]]*Exec(Start|Stop)=.*[[:space:]]--name[= ]$n([[:space:]]|\$)" "$f"; then
+    if grep -qE "$ex.*[[:space:]](start|stop|run|restart|kill|rm|create)[[:space:]]+(.*[[:space:]])?$name" "$f" \
+      || grep -qE "$ex.*[[:space:]]--name[= ]$name" "$f"; then
       printf '%s\n' "${f##*/}"
     fi
   done
