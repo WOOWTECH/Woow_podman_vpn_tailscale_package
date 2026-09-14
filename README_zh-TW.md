@@ -315,6 +315,8 @@ scripts/
   install.sh upgrade.sh uninstall.sh backup.sh restore.sh migrate-legacy.sh
   common.sh render-args.sh watchdog.sh
   lib/quadlet-lib.sh         內嵌的 WOOWTECH Quadlet 函式庫（請勿修改；CI 會檢查雜湊）
+  lib/quadlet-lib.versions   版本帳本；tests/lib-version.sh 驗證上面那份函式庫
+                             真的是它自稱的版本（CI）
 tests/
   dryrun.sh dryrun.local.sh  render + quadlet -dryrun + systemd-analyze verify（CI）
   smoke.sh                   實機安裝後檢查
