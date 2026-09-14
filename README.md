@@ -324,6 +324,22 @@ used to be dropped. `--status` prints the effective allowlist.
 **Downtime: the tailnet path and every `tailscale serve` forward are down for roughly
 15-30 seconds.**
 
+### When it refuses: a node of a different lineage
+
+`migrate-legacy.sh` adopts the container named `woow-tailscale` (override with `TS_CONTAINER=`).
+Where that name is absent but another `woow-tailscale*` container is running, the script **refuses
+and names it**, and it deliberately does **not** suggest `scripts/install.sh`: on such a host
+install.sh would build and start a *second* tailscale node against the same tailnet identity, from
+an image this repo cannot reproduce.
+
+It also refuses when the legacy unit carries `ExecStartPre` / `ExecStartPost` / `ExecStopPost` lines
+or a drop-in directory. The swap stops and disables that unit and installs a plain Quadlet unit in
+its place, so those hooks would simply be gone; port them into `quadlet/` first.
+
+Running any script out of a host's pre-Quadlet deployment tree is refused outright
+(`ql_require_own_lineage`): run it from a fresh clone, and do **not** delete that tree — live
+systemd units execute scripts from it. `tests/host-tree.sh` pins all of this.
+
 ## Security
 
 - **This node is a path into the host.** Tailnet connections land on host loopback, so

@@ -46,8 +46,18 @@
 # shellcheck source-path=SCRIPTDIR
 set -euo pipefail
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+# Lineage guard, ahead of the library source on purpose: a host's pre-Quadlet deployment tree
+# (a hand-copied, non-git directory that often carries the same name as this repo) has no
+# scripts/lib/quadlet-lib.sh, so sourcing first would die with a bare "No such file or
+# directory" instead of saying what is wrong. ql_require_own_lineage below catches the trees
+# that DO carry a lib copy.
+[[ -r $REPO/scripts/lib/quadlet-lib.sh ]] || {
+  printf '%s: ERROR: %s\n' "${0##*/}" "no scripts/lib/quadlet-lib.sh under $REPO: this is not a checkout of WOOWTECH/Woow_podman_vpn_tailscale_package. If it has scripts/deploy.sh you are running this from the host's pre-Quadlet deployment tree, which is not this package's lineage and is not a git repo - run from a fresh clone, and do not delete that tree: three live systemd units execute scripts from it" >&2
+  exit 1
+}
 # shellcheck source=lib/quadlet-lib.sh
 . "$REPO/scripts/lib/quadlet-lib.sh"
+ql_require_own_lineage "$REPO" WOOWTECH/Woow_podman_vpn_tailscale_package
 # shellcheck source=common.sh
 . "$REPO/scripts/common.sh"
 # shellcheck source=watchdog.sh
@@ -281,12 +291,16 @@ fi
 # ---- forward: discovery, preparation, then the detached swap ---------------------------------
 ql_preflight 4.4
 ql_lock woow-tailscale-migrate
-podman container exists "$TS_CONTAINER" >/dev/null 2>&1 \
-  || ql_die "no container named $TS_CONTAINER: nothing to migrate (on a fresh host run scripts/install.sh)"
+# Names the container and its lineage instead of dying on a bare name mismatch, and never
+# recommends install.sh on a host that already runs a tailscale node (see common.sh).
+ts_require_legacy_container
 label=$(podman inspect --format '{{index .Config.Labels "PODMAN_SYSTEMD_UNIT"}}' "$TS_CONTAINER")
 [[ $label == "<no value>" ]] && label=''
 if [[ $label == "$TS_UNIT" ]]; then ql_info "$TS_CONTAINER is already managed by $TS_UNIT; nothing to migrate"; exit 0; fi
 mapfile -t legacy_units < <({ [[ -n $label ]] && printf '%s\n' "$label"; ts_legacy_units; } | sort -u)
+# The swap stops and disables every unit it discovered, and writes a plain Quadlet unit in
+# its place. A unit with Exec*Pre/Post or a drop-in therefore loses that behaviour silently.
+ts_require_reproducible_units "${legacy_units[@]}"
 
 # where the identity lives today
 state_src='' state_type='' state_vol=''

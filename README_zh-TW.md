@@ -259,6 +259,21 @@ state 目錄——pi-web 的 `Volume=%h:/host%h` 把 `$HOME` 底下每個路徑�
 
 **停機時間：tailnet 通道與所有 `tailscale serve` 轉發約中斷 15-30 秒。**
 
+### 何時會拒絕：血統不同的節點
+
+`migrate-legacy.sh` 接管名為 `woow-tailscale` 的容器（可用 `TS_CONTAINER=` 覆寫）。
+若找不到該名稱、但主機上跑著其他 `woow-tailscale*` 容器，腳本會**拒絕並指名該容器**，
+而且刻意**不**再建議執行 `scripts/install.sh`：在那種主機上 install.sh 會用同一組 tailnet
+身分再啟動**第二個** tailscale 節點，而其映像是本 repo 無法重現的。
+
+若 legacy unit 帶有 `ExecStartPre` / `ExecStartPost` / `ExecStopPost` 或 drop-in 目錄，也會拒絕。
+swap 會停用並 disable 該 unit，換成一個沒有這些 hook 的 Quadlet unit，那些行為會直接消失；
+請先把它們移植進 `quadlet/`。
+
+在主機的 pre-Quadlet 部署樹裡執行本套件的任何腳本都會被拒絕（`ql_require_own_lineage`）：
+請改用全新 clone 執行，而且**不要刪除**那棵樹——有正在運作的 systemd unit 會執行裡面的腳本。
+以上行為由 `tests/host-tree.sh` 固定。
+
 ## 安全性
 
 - **這個節點是進入主機的通道。** tailnet 連線會落在主機 loopback，所以連得到節點 tailnet 位址的
@@ -300,6 +315,8 @@ scripts/
   install.sh upgrade.sh uninstall.sh backup.sh restore.sh migrate-legacy.sh
   common.sh render-args.sh watchdog.sh
   lib/quadlet-lib.sh         內嵌的 WOOWTECH Quadlet 函式庫（請勿修改；CI 會檢查雜湊）
+  lib/quadlet-lib.versions   版本帳本；tests/lib-version.sh 驗證上面那份函式庫
+                             真的是它自稱的版本（CI）
 tests/
   dryrun.sh dryrun.local.sh  render + quadlet -dryrun + systemd-analyze verify（CI）
   smoke.sh                   實機安裝後檢查

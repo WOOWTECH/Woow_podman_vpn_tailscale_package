@@ -44,3 +44,10 @@ jobs:
 
       - name: Legacy rollback model (rename vs capture)
         run: tests/rollback-model.sh
+
+      # tests/host-tree.sh pins the refusals for a host that runs a tailscale node of a
+      # different lineage (openclaw's woow-tailscale-gateway): the name must not
+      # false-positive-match, install.sh must not be recommended, and a unit with
+      # Exec*Pre/Post hooks or a drop-in must be refused.
+      - name: Host-tree and lineage guards
+        run: tests/host-tree.sh

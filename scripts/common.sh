@@ -5,7 +5,9 @@
 # shellcheck disable=SC2034 # read by the scripts that source this file
 TS_APP=woow-tailscale
 # shellcheck disable=SC2034
-TS_CONTAINER=woow-tailscale
+# Overridable, but see ts_require_legacy_container: pointing this at a container of a
+# different lineage (woowtechopenclaw's woow-tailscale-gateway) is refused, not adopted.
+TS_CONTAINER=${TS_CONTAINER:-woow-tailscale}
 # shellcheck disable=SC2034
 TS_UNIT=woow-tailscale.service
 # shellcheck disable=SC2034
@@ -27,18 +29,95 @@ ts_env_value() {
 # ts_state_dir: TS_STATE_DIR from the install env file, with %h expanded
 ts_state_dir() { ql_expand_home "$(ts_env_value "$TS_INSTALL_ENV" TS_STATE_DIR)"; }
 
-# ts_legacy_units: user units that start or stop a container named woow-tailscale
+# ts_legacy_units: user units that start or stop a container named $TS_CONTAINER.
+#
+# The name is anchored on whitespace-or-end, not on `\b`. A word boundary sits between
+# "woow-tailscale" and the "-" of "woow-tailscale-gateway", so `\bwoow-tailscale\b` matched
+# `ExecStart=/usr/bin/podman run --name woow-tailscale-gateway` - openclaw's live gateway,
+# a different lineage - and a name override would then have handed its unit to the swap,
+# which stops and disables what it discovers. tests/host-tree.sh pins that negative case.
+#
+# The argument between the verb and the name is OPTIONAL. An earlier anchoring wrote
+# `...(start|stop|run|restart)[[:space:]].*[[:space:]]$n(...)`, whose `.*[[:space:]]`
+# demanded a SECOND whitespace run after the verb - so the canonical
+# `ExecStart=/usr/bin/podman start woow-tailscale` was NOT discovered, while
+# `ExecStop=/usr/bin/podman stop -t 10 woow-tailscale` was. An undiscovered unit is never
+# stopped and never `systemctl --user disable`d by migrate-legacy.sh, and on a host where
+# podman-restart.service is enabled (woowtechopenclaw) it revives the container at the next
+# boot against the Quadlet-managed one. tests/host-tree.sh now pins one case per Exec form.
 ts_legacy_units() {
-  local d=$HOME/.config/systemd/user f
+  local d=$HOME/.config/systemd/user f n=$TS_CONTAINER
   [[ -d $d ]] || return 0
+  # the name, optionally quoted, anchored on whitespace-or-end
+  local q='["'"'"']?'
+  local name="${q}${n}${q}([[:space:]]|\$)"
+  local ex='^[[:space:]]*Exec(Start|StartPre|StartPost|Stop|StopPost|Reload)='
   for f in "$d"/*.service; do
     [[ -f $f ]] || continue
     [[ ${f##*/} == "$TS_UNIT" ]] && continue
-    if grep -qE '^[[:space:]]*Exec(Start|StartPre|Stop)=.*[[:space:]](start|stop|run|restart)[[:space:]].*\bwoow-tailscale\b' "$f" \
-      || grep -qE '^[[:space:]]*Exec(Start|Stop)=.*[[:space:]]--name[= ]woow-tailscale\b' "$f"; then
+    if grep -qE "$ex.*[[:space:]](start|stop|run|restart|kill|rm|create)[[:space:]]+(.*[[:space:]])?$name" "$f" \
+      || grep -qE "$ex.*[[:space:]]--name[= ]$name" "$f"; then
       printf '%s\n' "${f##*/}"
     fi
   done
+}
+
+# ts_unit_hooks <unit name>: every Exec*Pre / Exec*Post line of a user unit, plus a marker
+# for a drop-in directory, one per line as "<key>=<value>". Nothing in migrate-legacy.sh
+# reproduces these, and on woowtechopenclaw they run resource_ownership.py and
+# apply-official-services.sh out of a non-git tree, so their presence is a refusal.
+ts_unit_hooks() {
+  local d=$HOME/.config/systemd/user f=$HOME/.config/systemd/user/$1
+  [[ -f $f ]] || return 0
+  sed -n 's/^[[:space:]]*\(Exec\(StartPre\|StartPost\|StopPost\|Reload\|Condition\)=.*\)/\1/p' "$f"
+  local dropin
+  for dropin in "$d/$1.d"/*.conf; do
+    [[ -f $dropin ]] || continue
+    printf 'drop-in=%s\n' "${dropin##*/}"
+    sed -n 's/^[[:space:]]*\(Exec[A-Za-z]*=.*\)/\1/p' "$dropin"
+  done
+  return 0
+}
+
+# ts_similar_containers: containers whose name starts with $TS_CONTAINER but is not it.
+ts_similar_containers() {
+  podman ps -a --format '{{.Names}}' 2>/dev/null \
+    | grep -E "^$TS_CONTAINER" | grep -vx "$TS_CONTAINER" || true
+  return 0
+}
+
+# ts_require_legacy_container: the container this package adopts must exist under exactly
+# the name this package uses. When it does not but a woow-tailscale* container does, that
+# host runs tailscale from a different lineage - openclaw's woow-tailscale-gateway is built
+# from a Containerfile and entrypoint.sh that diverged by ~170 lines and is pinned by image
+# ID - and the old advice here ("on a fresh host run scripts/install.sh") was the worst
+# possible answer: install.sh would build and start a SECOND node against the same tailnet
+# identity. So that suggestion is made only when nothing tailscale-shaped is running.
+ts_require_legacy_container() {
+  podman container exists "$TS_CONTAINER" >/dev/null 2>&1 && return 0
+  local -a similar=()
+  mapfile -t similar < <(ts_similar_containers)
+  ((${#similar[@]})) || ql_die "no container named $TS_CONTAINER: nothing to migrate (on a fresh host run scripts/install.sh)"
+  local c unit
+  for c in "${similar[@]}"; do
+    unit=$(podman inspect --format '{{index .Config.Labels "PODMAN_SYSTEMD_UNIT"}}' "$c" 2>/dev/null)
+    [[ $unit == "<no value>" || -z $unit ]] && unit=$(TS_CONTAINER=$c ts_legacy_units | tr '\n' ' ')
+    ql_warn "found $c (unit: ${unit:-unknown})"
+  done
+  ql_die "no container named $TS_CONTAINER, but this host runs ${similar[*]} from a different lineage. Do NOT run scripts/install.sh here: it would build and start a second tailscale node against the same tailnet identity, and that node's image is pinned by ID and built from a diverged Containerfile/entrypoint.sh that this repo cannot reproduce. Migrating it is a separate, planned window"
+}
+
+# ts_require_reproducible_units <unit>...: refuse units whose behaviour the Quadlet unit does
+# not carry over. migrate-legacy.sh reads neither drop-ins nor Exec*Pre/Post, so a unit that
+# has them would lose that behaviour the moment the swap disables it.
+ts_require_reproducible_units() {
+  local u hooks
+  for u in "$@"; do
+    hooks=$(ts_unit_hooks "$u")
+    [[ -n $hooks ]] || continue
+    ql_die "the legacy unit $u carries hooks this package does not reproduce:"$'\n'"${hooks//$'\n'/$'\n'  }"$'\n'"scripts/install.sh writes a plain Quadlet unit with none of them, and the swap stops and disables $u, so that behaviour would simply be gone. Port it into quadlet/ (or a fragment) before migrating this host"
+  done
+  return 0
 }
 
 # ts_status <container>: BackendState, node ID, first tailnet IP and hostname, one line.
