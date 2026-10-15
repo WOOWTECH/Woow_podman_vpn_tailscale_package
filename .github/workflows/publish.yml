@@ -1,0 +1,120 @@
+# Publish gate: build the arm64 image natively and push it to GHCR under the tag the
+# quadlet pins, then record the arm64 manifest digest. Hosts pull by that digest, never by
+# tag (woow_ha_version_control ADR-0005), so the digest is the release, the tag only names it.
+#
+# Trigger: push a git tag equal to the quadlet's image tag, e.g. `git tag 1.102.3-r1`.
+# A tag already on GHCR is never overwritten; bump -rN instead.
+name: publish
+
+on:
+  push:
+    tags: ['[0-9]*.[0-9]*.[0-9]*-r[0-9]*']
+
+permissions:
+  contents: write                  # the GitHub release that records the digest
+  packages: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/woowtech/woow-tailscale
+
+jobs:
+  arm64:
+    runs-on: ubuntu-24.04-arm      # native arm64: the H618 boxes are the only consumers
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install podman, skopeo and shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman skopeo shellcheck
+          podman --version
+
+      - name: The git tag is the quadlet's image tag
+        run: |
+          tag=$(sed -n 's/^Image=localhost\/woow-tailscale://p' quadlet/woow-tailscale.container | head -n1)
+          if [ "$tag" != "$GITHUB_REF_NAME" ]; then
+            echo "git tag $GITHUB_REF_NAME does not match the quadlet's image tag $tag" >&2
+            exit 1
+          fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: The tag is not on GHCR yet
+        run: |
+          if skopeo inspect --raw "docker://$IMAGE:$TAG" >/dev/null 2>&1; then
+            echo "$IMAGE:$TAG already exists; published tags are never overwritten, bump -rN" >&2
+            exit 1
+          fi
+
+      - name: shellcheck entrypoint.sh
+        run: shellcheck entrypoint.sh
+
+      # --format docker keeps HEALTHCHECK (see Containerfile). Retries cover Docker Hub
+      # and Alpine mirror hiccups, not build failures.
+      - name: Build
+        run: |
+          for i in 1 2 3; do
+            podman build --format docker --platform linux/arm64 \
+              --label org.opencontainers.image.version="$TAG" \
+              --label org.opencontainers.image.revision="$GITHUB_SHA" \
+              -t "$IMAGE:$TAG" . && break
+            sleep 10
+          done
+          podman image exists "$IMAGE:$TAG"
+
+      - name: The image carries the pinned tailscale version
+        run: |
+          got=$(podman run --rm --network none --entrypoint tailscale "$IMAGE:$TAG" version | head -n1)
+          echo "tailscale version: $got"
+          case "$got" in "${TAG%-r*}"*) ;; *) echo "expected ${TAG%-r*}, got $got" >&2; exit 1 ;; esac
+
+      # The image is public: node state and keys must come from the host's volume, never
+      # from a layer.
+      - name: The image carries no tailscale state
+        run: |
+          podman run --rm --network none --entrypoint sh "$IMAGE:$TAG" -c '
+            if [ -n "$(ls -A /var/lib/tailscale 2>/dev/null)" ]; then
+              echo "/var/lib/tailscale is not empty:" >&2; ls -la /var/lib/tailscale >&2; exit 1
+            fi
+            found=$(find / -xdev \( -name "tailscaled.state*" -o -name "*.key" \) 2>/dev/null)
+            if [ -n "$found" ]; then echo "state or key files in the image:" >&2; echo "$found" >&2; exit 1; fi
+          '
+
+      - name: Push and record the arm64 manifest digest
+        run: |
+          for i in 1 2 3; do
+            podman push --digestfile digest "$IMAGE:$TAG" && break
+            sleep 15
+          done
+          digest=$(cat digest)
+          case "$digest" in sha256:*) ;; *) echo "no digest from push: '$digest'" >&2; exit 1 ;; esac
+
+          # A single-arch push yields a plain manifest, so this digest is the arm64 manifest
+          # digest that ADR-0005 pins. Check it resolves and is arm64.
+          arch=$(skopeo inspect "docker://$IMAGE@$digest" | jq -r .Architecture)
+          if [ "$arch" != "arm64" ]; then echo "expected arm64, got $arch" >&2; exit 1; fi
+          echo "DIGEST=$digest" >> "$GITHUB_ENV"
+
+      - name: Release notes carry the pinned reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<EOF
+          Image: \`$IMAGE:$TAG\`
+
+          arm64 manifest digest (pin this):
+
+          \`\`\`
+          $IMAGE:$TAG@$DIGEST
+          \`\`\`
+
+          Built from $GITHUB_SHA on ubuntu-24.04-arm.
+          EOF
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md

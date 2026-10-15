@@ -37,8 +37,11 @@ node comes back after a crash and after a reboot.
 | **Supervision** | `systemd --user` units generated from Quadlet: `Restart=always`, health check `tailscale status --peers=false` |
 | **Scripts** | install, upgrade (watchdog + rollback), backup, restore, uninstall, and a migration from a compose/manual deployment |
 
-The image is built locally and lives in no registry, so the unit carries `Pull=never`.
-Publishing it to GHCR (so a fresh host can skip the build) is future work.
+`scripts/install.sh` builds the image locally, so the unit carries `Pull=never`.
+The arm64 image is also published to `ghcr.io/woowtech/woow-tailscale` by
+`.github/workflows/publish.yml` when a git tag equal to the quadlet's image tag is pushed
+(e.g. `1.102.3-r1`). Each release's notes carry the arm64 manifest digest; pull by that
+digest, not by tag. A published tag is never overwritten: change the image, bump `-rN`.
 
 ---
 
