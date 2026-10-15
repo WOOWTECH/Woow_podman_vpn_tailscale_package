@@ -35,8 +35,10 @@ linger，崩潰後會自動拉起，重開機後也會回來。
 | **監管** | Quadlet 產生的 `systemd --user` unit：`Restart=always`，健康檢查 `tailscale status --peers=false` |
 | **腳本** | install、upgrade（watchdog + 回滾）、backup、restore、uninstall，以及從 compose／手動部署遷移 |
 
-映像只在本機建置、不在任何 registry，所以 unit 用 `Pull=never`。發佈到 GHCR（讓新主機免建置）
-是之後的工作。
+`scripts/install.sh` 在本機建置映像，所以 unit 用 `Pull=never`。
+推送與 quadlet 映像 tag 相同的 git tag（例如 `1.102.3-r1`）時，`.github/workflows/publish.yml`
+也會把 arm64 映像發佈到 `ghcr.io/woowtech/woow-tailscale`。每個 release 的說明記有 arm64
+manifest digest；請依 digest 拉取，不要依 tag。已發佈的 tag 不會覆寫：映像有改就升 `-rN`。
 
 ---
 
