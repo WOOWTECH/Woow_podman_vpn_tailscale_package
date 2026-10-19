@@ -28,7 +28,7 @@ linger，崩潰後會自動拉起，重開機後也會回來。
 
 | | |
 |---|---|
-| **容器** | `woow-tailscale`，映像 `localhost/woow-tailscale:1.102.3-r1`，在本機由 `docker.io/tailscale/tailscale:v1.102.3`（已釘版）加上本倉 entrypoint 建置 |
+| **容器** | `woow-tailscale`，映像 `localhost/woow-tailscale:1.102.3-r2`，在本機由 `docker.io/tailscale/tailscale:v1.102.3`（釘 tag 與 index digest）加上本倉 entrypoint 建置 |
 | **網路** | `Network=host` 加 `--tun=userspace-networking`：不需要任何 capability，也不需要 `/dev/net/tun` |
 | **身分** | bind mount 的 state 目錄 — machine key、node key、prefs 與 `tailscale serve` 設定 |
 | **設定** | `~/.config/woow-tailscale/` 下兩個 0600 檔案；env 名稱與 HA add-on 的 option key 一一對應 |
@@ -36,7 +36,7 @@ linger，崩潰後會自動拉起，重開機後也會回來。
 | **腳本** | install、upgrade（watchdog + 回滾）、backup、restore、uninstall，以及從 compose／手動部署遷移 |
 
 `scripts/install.sh` 在本機建置映像，所以 unit 用 `Pull=never`。
-推送與 quadlet 映像 tag 相同的 git tag（例如 `1.102.3-r1`）時，`.github/workflows/publish.yml`
+推送與 quadlet 映像 tag 相同的 git tag（例如 `1.102.3-r2`）時，`.github/workflows/publish.yml`
 也會把 arm64 映像發佈到 `ghcr.io/woowtech/woow-tailscale`。每個 release 的說明記有 arm64
 manifest digest；請依 digest 拉取，不要依 tag。已發佈的 tag 不會覆寫：映像有改就升 `-rN`。
 
@@ -147,18 +147,22 @@ prefs 與 serve 設定。把它指向舊部署用的目錄，tailnet 上看不�
 ### `tailscale web` 的安全性
 
 `tailscale web` 是**可寫、且完全沒有認證**的管理介面 — 連得到的人可以改這個節點的設定，也可以
-把它登出。它預設關閉，而且 unit 強制 `TS_WEB_LISTEN=127.0.0.1:8088`，不可能被發佈到 LAN 介面。
+把它登出。它預設關閉，而且 unit 強制 `TS_WEB_LISTEN=127.0.0.1:8089`，不可能被發佈到 LAN 介面。
 要用就明確地開一條路：
 
 ```bash
-ssh -L 8088:127.0.0.1:8088 <user>@<host>              # 然後開 http://127.0.0.1:8088/
-podman exec woow-tailscale tailscale serve --bg --tcp=8088 tcp://127.0.0.1:8088
+ssh -L 8089:127.0.0.1:8089 <user>@<host>              # 然後開 http://127.0.0.1:8089/
+podman exec woow-tailscale tailscale serve --bg --tcp=8089 tcp://127.0.0.1:8089
 ```
 
 注意 tailnet serve 等於把它交給**整個 tailnet 的每一個成員**。若真的需要放到 LAN，不要去改監聽
-位址，而是在主機上用一個帶認證的 reverse proxy 擋在 `127.0.0.1:8088` 前面
+位址，而是在主機上用一個帶認證的 reverse proxy 擋在 `127.0.0.1:8089` 前面
 （`examples/nginx-basic-auth.conf` 是範本）。unit 強制的監聽位址與 `tests/smoke.sh` 都會把
-loopback 以外的 8088 視為失敗。
+loopback 以外的 8089 視為失敗。
+
+`1.102.3-r1` 以前監聽 `127.0.0.1:8088`；從 `1.102.3-r2` 起改為 `127.0.0.1:8089`，因為 `:8088`
+留給 `woow-auth-gateway`（WOOWTECH/Woow_podman_auth_gateway），它驗證 ticket 之後再轉給這個介面。
+升級時，指向 `127.0.0.1:8088` 的 `tailscale serve` 轉發或 reverse proxy 要改成 `8089`。
 
 ### userspace 模式下的 subnet router 與 exit node
 
@@ -325,7 +329,7 @@ tests/
   detached-env.sh            transient unit 有帶到該帶的環境變數（CI）
   fixtures/                  dry-run 用的各主機變體
 Containerfile entrypoint.sh  映像：釘版的上游 base + env 驅動的 entrypoint
-examples/nginx-basic-auth.conf  在 127.0.0.1:8088 前面加認證
+examples/nginx-basic-auth.conf  在 127.0.0.1:8089 前面加認證
 docs/history/HANDOFF-v1.md   已退役的 compose + bridge + Caddy 設計，保留為歷史
 .github/workflows/           quadlet-ci.yml（dry-run、shellcheck）、scripts.yml（detached 環境）、
                              image.yml（建置與版本檢查）

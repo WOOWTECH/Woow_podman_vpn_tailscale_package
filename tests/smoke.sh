@@ -80,12 +80,12 @@ fi
 # 5. the web UI never leaves loopback
 listeners=$(ss -tlnH 2>/dev/null | awk '{print $4}' | sort -u)
 if [[ $web_ui == true ]]; then
-  if grep -qxF '127.0.0.1:8088' <<<"$listeners"; then pass "tailscale web listens on 127.0.0.1:8088"; else fail "TS_WEB_UI=true but nothing listens on 127.0.0.1:8088"; fi
+  if grep -qxF '127.0.0.1:8089' <<<"$listeners"; then pass "tailscale web listens on 127.0.0.1:8089"; else fail "TS_WEB_UI=true but nothing listens on 127.0.0.1:8089"; fi
 fi
-if grep -qE '^(\*|0\.0\.0\.0|\[::\]):8088$' <<<"$listeners"; then
-  fail "port 8088 is exposed beyond loopback: that is a writable, unauthenticated node admin UI"
+if grep -qE '^(\*|0\.0\.0\.0|\[::\]):8089$' <<<"$listeners"; then
+  fail "port 8089 is exposed beyond loopback: that is a writable, unauthenticated node admin UI"
 else
-  pass "port 8088 is not exposed beyond loopback"
+  pass "port 8089 is not exposed beyond loopback"
 fi
 
 # 6. WireGuard port
@@ -96,7 +96,7 @@ if grep -qE ":$udp_port\$" <<<"$udp_listeners"; then pass "UDP $udp_port is boun
 if [[ -f $INSTALLED ]]; then
   grep -qx 'Network=host' "$INSTALLED" || fail "the installed unit is not on the host network"
   grep -qx 'Environment=TS_USERSPACE_NETWORKING=true' "$INSTALLED" || fail "the installed unit does not force userspace networking"
-  grep -qx 'Environment=TS_WEB_LISTEN=127.0.0.1:8088' "$INSTALLED" || fail "the installed unit does not force the loopback web UI"
+  grep -qx 'Environment=TS_WEB_LISTEN=127.0.0.1:8089' "$INSTALLED" || fail "the installed unit does not force the loopback web UI"
   grep -qE '^Image=localhost/woow-tailscale:[0-9.]+-r[0-9]+$' "$INSTALLED" || fail "the installed unit does not pin an image tag"
   pass "installed unit invariants checked"
 else

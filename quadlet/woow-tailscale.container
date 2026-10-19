@@ -26,9 +26,9 @@ Documentation=https://github.com/WOOWTECH/Woow_podman_vpn_tailscale_package
 ContainerName=woow-tailscale
 
 # Built locally by scripts/install.sh from ./Containerfile, whose base is pinned to
-# docker.io/tailscale/tailscale:v1.102.3. Tag = <tailscale version>-r<package revision>.
+# docker.io/tailscale/tailscale:v1.102.3 by index digest. Tag = <tailscale version>-r<package revision>.
 # The image is in no registry, so Pull=never.
-Image=localhost/woow-tailscale:1.102.3-r1
+Image=localhost/woow-tailscale:1.102.3-r2
 Pull=never
 
 Network=host
@@ -40,9 +40,10 @@ EnvironmentFile=%h/.config/woow-tailscale/tailscale.env
 # Forced by the unit, because podman's --env overrides --env-file:
 #  - userspace mode: kernel mode cannot work in the rootless host netns.
 #  - loopback-only `tailscale web`: it is a writable admin UI with no authentication at
-#    all. Reach it through a tailnet serve forward to 127.0.0.1:8088, or over ssh -L.
+#    all. Reach it through a tailnet serve forward to 127.0.0.1:8089, or over ssh -L.
+#    Not 8088: woow-auth-gateway listens there and forwards here after its ticket check.
 Environment=TS_USERSPACE_NETWORKING=true
-Environment=TS_WEB_LISTEN=127.0.0.1:8088
+Environment=TS_WEB_LISTEN=127.0.0.1:8089
 Environment=TINI_SUBREAPER=1
 
 HealthCmd=tailscale status --peers=false

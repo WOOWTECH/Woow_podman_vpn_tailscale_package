@@ -2,7 +2,7 @@
 # quadlet pins, then record the arm64 manifest digest. Hosts pull by that digest, never by
 # tag (woow_ha_version_control ADR-0005), so the digest is the release, the tag only names it.
 #
-# Trigger: push a git tag equal to the quadlet's image tag, e.g. `git tag 1.102.3-r1`.
+# Trigger: push a git tag equal to the quadlet's image tag, e.g. `git tag 1.102.3-r2`.
 # A tag already on GHCR is never overwritten; bump -rN instead.
 name: publish
 
