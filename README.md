@@ -30,7 +30,7 @@ node comes back after a crash and after a reboot.
 
 | | |
 |---|---|
-| **Container** | `woow-tailscale` from `localhost/woow-tailscale:1.102.3-r1`, built on this host from `docker.io/tailscale/tailscale:v1.102.3` (pinned) plus this repo's entrypoint |
+| **Container** | `woow-tailscale` from `localhost/woow-tailscale:1.102.3-r2`, built on this host from `docker.io/tailscale/tailscale:v1.102.3` (pinned by tag and index digest) plus this repo's entrypoint |
 | **Network** | `Network=host` with `--tun=userspace-networking`: no capabilities, no `/dev/net/tun` |
 | **Identity** | a bind-mounted state directory — machine key, node key, prefs and the `tailscale serve` configuration |
 | **Settings** | two files under `~/.config/woow-tailscale/`, mode 0600; env names mirror the HA add-on's option keys |
@@ -40,7 +40,7 @@ node comes back after a crash and after a reboot.
 `scripts/install.sh` builds the image locally, so the unit carries `Pull=never`.
 The arm64 image is also published to `ghcr.io/woowtech/woow-tailscale` by
 `.github/workflows/publish.yml` when a git tag equal to the quadlet's image tag is pushed
-(e.g. `1.102.3-r1`). Each release's notes carry the arm64 manifest digest; pull by that
+(e.g. `1.102.3-r2`). Each release's notes carry the arm64 manifest digest; pull by that
 digest, not by tag. A published tag is never overwritten: change the image, bump `-rN`.
 
 ---
@@ -159,19 +159,24 @@ when another running container bind-mounts the same path.
 
 `tailscale web` is a **writable admin UI with no authentication at all** — whoever reaches
 it can change this node's settings and log it out. It is off by default, and the unit
-forces `TS_WEB_LISTEN=127.0.0.1:8088` so it can never be published on a LAN interface.
+forces `TS_WEB_LISTEN=127.0.0.1:8089` so it can never be published on a LAN interface.
 Reach it deliberately:
 
 ```bash
-ssh -L 8088:127.0.0.1:8088 <user>@<host>              # then http://127.0.0.1:8088/
-podman exec woow-tailscale tailscale serve --bg --tcp=8088 tcp://127.0.0.1:8088
+ssh -L 8089:127.0.0.1:8089 <user>@<host>              # then http://127.0.0.1:8089/
+podman exec woow-tailscale tailscale serve --bg --tcp=8089 tcp://127.0.0.1:8089
 ```
 
 A tailnet serve forward gives it to **every member of the tailnet**. If you need it on the
 LAN, do not move the listener: put a reverse proxy with authentication in front of
-`127.0.0.1:8088` on the host — `examples/nginx-basic-auth.conf` is a starting point. The
-unit's forced listener and `tests/smoke.sh` both treat an 8088 socket outside loopback as
+`127.0.0.1:8089` on the host — `examples/nginx-basic-auth.conf` is a starting point. The
+unit's forced listener and `tests/smoke.sh` both treat an 8089 socket outside loopback as
 a failure.
+
+Up to `1.102.3-r1` the listener was `127.0.0.1:8088`. From `1.102.3-r2` it is
+`127.0.0.1:8089`, because `:8088` belongs to `woow-auth-gateway` (WOOWTECH/Woow_podman_auth_gateway),
+which checks a ticket and then forwards to this UI. A `tailscale serve` forward or a reverse
+proxy made for `127.0.0.1:8088` must be changed to `8089` when you upgrade.
 
 ### Subnet router and exit node in userspace mode
 
@@ -396,7 +401,7 @@ tests/
   detached-env.sh            the transient units carry the environment they need (CI)
   fixtures/                  per-host variants for the dry-run
 Containerfile entrypoint.sh  the image: pinned upstream base + the env-driven entrypoint
-examples/nginx-basic-auth.conf  putting auth in front of 127.0.0.1:8088
+examples/nginx-basic-auth.conf  putting auth in front of 127.0.0.1:8089
 docs/history/HANDOFF-v1.md   the retired compose + bridge + Caddy design, kept as history
 .github/workflows/           quadlet-ci.yml (dry-run, shellcheck), scripts.yml (detached env),
                              image.yml (build + version gate)

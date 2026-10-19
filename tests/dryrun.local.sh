@@ -24,7 +24,7 @@ for variant in example fixture-toypark1234; do
   _ts_check "$variant: container name" _ts_has "$exec_line" '--name=woow-tailscale '
   _ts_check "$variant: host network" _ts_has "$exec_line" '--network=host'
   _ts_check "$variant: userspace mode forced" _ts_has "$exec_line" '--env TS_USERSPACE_NETWORKING=true'
-  _ts_check "$variant: web UI forced to loopback" _ts_has "$exec_line" '--env TS_WEB_LISTEN=127.0.0.1:8088'
+  _ts_check "$variant: web UI forced to loopback" _ts_has "$exec_line" '--env TS_WEB_LISTEN=127.0.0.1:8089'
   _ts_check "$variant: env file without a dash" _ts_has "$exec_line" '--env-file %h/.config/woow-tailscale/tailscale.env'
   _ts_check "$variant: Pull=never" _ts_has "$exec_line" '--pull never'
   _ts_check "$variant: pinned image tag" grep -qE 'localhost/woow-tailscale:[0-9]+\.[0-9]+\.[0-9]+-r[0-9]+ *$' <<<"$exec_line"
@@ -53,11 +53,11 @@ _ts_check "web UI off by default in the example" grep -qx 'TS_WEB_UI=false' "$RE
 # shellcheck disable=SC2016 # literal shell defaults, matched as written in entrypoint.sh
 _ts_check "entrypoint defaults the web UI to off" grep -q 'TS_WEB_UI="${TS_WEB_UI:-false}"' "$REPO/entrypoint.sh"
 # shellcheck disable=SC2016
-_ts_check "entrypoint defaults the web listener to loopback" grep -q 'TS_WEB_LISTEN="${TS_WEB_LISTEN:-127.0.0.1:8088}"' "$REPO/entrypoint.sh"
+_ts_check "entrypoint defaults the web listener to loopback" grep -q 'TS_WEB_LISTEN="${TS_WEB_LISTEN:-127.0.0.1:8089}"' "$REPO/entrypoint.sh"
 _ts_check "entrypoint refuses a non-loopback web listener" grep -q 'TS_WEB_ALLOW_NONLOCAL' "$REPO/entrypoint.sh"
-_ts_check "the base image is pinned" grep -qE '^ARG BASE_IMAGE=docker.io/tailscale/tailscale:v[0-9]+\.[0-9]+\.[0-9]+$' "$REPO/Containerfile"
+_ts_check "the base image is pinned by version and index digest" grep -qE '^ARG BASE_IMAGE=docker.io/tailscale/tailscale:v[0-9]+\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}$' "$REPO/Containerfile"
 # The image tag and the pinned base must agree on the version.
-_ts_base=$(sed -n 's/^ARG BASE_IMAGE=docker.io\/tailscale\/tailscale:v//p' "$REPO/Containerfile" | head -n1)
+_ts_base=$(sed -n 's/^ARG BASE_IMAGE=docker.io\/tailscale\/tailscale:v\([^@]*\).*/\1/p' "$REPO/Containerfile" | head -n1)
 _ts_tag=$(sed -n 's/^Image=localhost\/woow-tailscale://p' "$REPO/quadlet/woow-tailscale.container" | head -n1)
 _ts_check "image tag ${_ts_tag} matches the base ${_ts_base}" [ "${_ts_tag%-r*}" = "$_ts_base" ]
 # The dropped bridge/Caddy design must not come back.

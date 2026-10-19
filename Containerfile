@@ -2,14 +2,14 @@
 #
 # Base: official upstream tailscale/tailscale image (Alpine + tailscaled + tailscale CLI),
 # pinned. We add a thin env-driven entrypoint that mirrors the HA add-on's option names,
-# and (optionally) tailscale's own web UI, bound to 127.0.0.1:8088 by the Quadlet unit.
+# and (optionally) tailscale's own web UI, bound to 127.0.0.1:8089 by the Quadlet unit.
 #
 # scripts/install.sh builds this as localhost/woow-tailscale:<tag>, where the tag comes
 # from quadlet/woow-tailscale.container (Pull=never). Build it by hand with:
 #
-#   podman build --format docker -t localhost/woow-tailscale:1.102.3-r1 .
+#   podman build --format docker -t localhost/woow-tailscale:1.102.3-r2 .
 
-ARG BASE_IMAGE=docker.io/tailscale/tailscale:v1.102.3
+ARG BASE_IMAGE=docker.io/tailscale/tailscale:v1.102.3@sha256:8c42c4574ab066384fcb72f69e086a2ff1dd3652eb6f56856cee34bcf0d2f680
 FROM ${BASE_IMAGE}
 
 # Small extras used by entrypoint / userspace scripts:
@@ -34,8 +34,8 @@ VOLUME ["/var/lib/tailscale"]
 
 # Documentation only: the unit runs this container in the host network namespace, where
 # EXPOSE and published ports play no part. 41641/udp is WireGuard direct (TS_UDP_PORT),
-# 8088/tcp the opt-in `tailscale web` UI, which the unit binds to 127.0.0.1.
-EXPOSE 41641/udp 8088/tcp
+# 8089/tcp the opt-in `tailscale web` UI, which the unit binds to 127.0.0.1.
+EXPOSE 41641/udp 8089/tcp
 
 # NOTE: HEALTHCHECK is a no-op on OCI-format images (podman's default format), which is
 # why install.sh builds with --format docker. The Quadlet unit carries the same probe as

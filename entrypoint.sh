@@ -30,10 +30,10 @@ TS_LOG_LEVEL="${TS_LOG_LEVEL:-info}"                     # trace|debug|info|noti
 # --- Web UI toggle -----------------------------------------------------------
 # `tailscale web` is a WRITABLE admin UI with no authentication: whoever reaches it can
 # change this node's settings and log it out. Off by default, and bound to loopback.
-# The Quadlet unit forces TS_WEB_LISTEN=127.0.0.1:8088; to expose it anywhere else you
+# The Quadlet unit forces TS_WEB_LISTEN=127.0.0.1:8089; to expose it anywhere else you
 # have to say so explicitly with TS_WEB_ALLOW_NONLOCAL=true and put auth in front.
 TS_WEB_UI="${TS_WEB_UI:-false}"
-TS_WEB_LISTEN="${TS_WEB_LISTEN:-127.0.0.1:8088}"
+TS_WEB_LISTEN="${TS_WEB_LISTEN:-127.0.0.1:8089}"
 TS_WEB_ALLOW_NONLOCAL="${TS_WEB_ALLOW_NONLOCAL:-false}"
 
 # --- Extra passthrough -------------------------------------------------------
@@ -151,7 +151,7 @@ else
 fi
 
 # ============================================================================
-# 4. Optional web UI on :8088
+# 4. Optional web UI on :8089
 # ============================================================================
 if [[ "$TS_WEB_UI" == "true" ]]; then
   case "$TS_WEB_LISTEN" in
@@ -160,7 +160,7 @@ if [[ "$TS_WEB_UI" == "true" ]]; then
       if [[ "$TS_WEB_ALLOW_NONLOCAL" != "true" ]]; then
         log "ERROR: TS_WEB_LISTEN=$TS_WEB_LISTEN is not a loopback address."
         log "The tailscale web UI is writable and has no authentication; anyone who reaches"
-        log "it can log this node out. Bind it to 127.0.0.1:8088 and reach it through a tailnet"
+        log "it can log this node out. Bind it to 127.0.0.1:8089 and reach it through a tailnet"
         log "serve forward or ssh -L, or set TS_WEB_ALLOW_NONLOCAL=true if you really mean it."
         exit 1
       fi

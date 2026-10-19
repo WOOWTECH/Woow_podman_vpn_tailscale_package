@@ -252,6 +252,6 @@ woow-tailscale is installed: $IMAGE
   State dir  $state_dir   (the node identity: back it up with scripts/backup.sh)
   Status     podman exec $TS_CONTAINER tailscale status
   Logs       journalctl --user -u $TS_UNIT -f ; podman logs -f $TS_CONTAINER
-  Web UI     TS_WEB_UI=$web_ui; when on it is bound to 127.0.0.1:8088 only
+  Web UI     TS_WEB_UI=$web_ui; when on it is bound to 127.0.0.1:8089 only
   Upgrade    git pull && scripts/upgrade.sh   (--watchdog on a management path)
 EOF
