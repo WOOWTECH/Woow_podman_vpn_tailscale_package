@@ -14,7 +14,7 @@ KEY = re.compile(
 )
 LIVE = re.compile(
     b"(?:--authkey=|TS_AUTHKEY=|HEADSCALE_PREAUTH_KEY=)"
-    + b"(?!<redacted>)(?![\"']?\$)(?![\"']?(?:$|[\r\n]))[^\s]+",
+    + b"(?!<redacted>)(?![\"']?\\$)(?![\"']?(?:$|[\r\n]))[^\\s]+",
     re.IGNORECASE,
 )
 
